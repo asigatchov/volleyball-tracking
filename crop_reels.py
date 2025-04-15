@@ -91,11 +91,24 @@ def calculate_ball_center_from_queue(dq):
     elif len(dq)== 1:
         return dq[0][0], dq[0][1]
 
-    x_coords = [point[0] for point in list(dq)[:2]]
-    y_coords = [point[1] for point in list(dq)[:2]]
+    x_coords = [point[0] for point in list(dq)[:10]]
+    y_coords = [point[1] for point in list(dq)[:10]]
     avg_x = int(np.mean(x_coords))
     avg_y = int(np.mean(y_coords))
     return avg_x, avg_y
+
+def smooth_crop_movement(previous_center, current_center, threshold=5):
+    """
+    Плавно перемещает кадр, если смещение мяча превышает заданный порог.
+    """
+    if previous_center is None:
+        return current_center
+
+    distance = np.linalg.norm(np.array(current_center) - np.array(previous_center))
+    if distance < threshold:
+        return previous_center
+
+    return current_center
 
 # Рассчитываем размеры обрезки
 frame_height, frame_width, _ = cap.read()[1].shape
@@ -204,9 +217,15 @@ while True:
     ball_center = calculate_ball_center_from_queue(dq)
 
     if ball_center:
+        # Плавное движение кадра по мячу
+        ball_center = smooth_crop_movement(previous_ball_center, ball_center)
+        previous_ball_center = ball_center
+
         img = crop_frame_to_ball(img, ball_center, crop_width, crop_height)
 
-        writer.write(img)
+        cv2.putText(img, f'Ball: {ball_center}', (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+    writer.write(img)
     cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
    # cv2.resizeWindow("Image", 1280, 720)        # Устанавливаем размер окна 1280x720
     cv2.imshow("Image", img)
