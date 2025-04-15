@@ -71,14 +71,14 @@ def crop_frame_to_ball(img, ball_center, crop_width, crop_height):
     x_center, y_center = ball_center
 
     x_start = max(0, x_center - crop_width // 2)
-    y_start = max(0, y_center - crop_height // 2)
+    y_start = 0 # max(0, y_center - crop_height // 2)
 
     x_end = min(frame_width, x_start + crop_width)
-    y_end = min(frame_height, y_start + crop_height)
+    y_end = crop_height # min(frame_height, y_start + crop_height)
 
     # Корректируем начало, если конец вышел за границы
     x_start = max(0, x_end - crop_width)
-    y_start = max(0, y_end - crop_height)
+    #y_start = max(0, y_end - crop_height)
 
     return img[y_start:y_end, x_start:x_end]
 
