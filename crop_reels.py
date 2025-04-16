@@ -110,6 +110,51 @@ def smooth_crop_movement(previous_center, current_center, threshold=5):
 
     return current_center
 
+def calculate_velocity_and_acceleration(dq):
+    """
+    Рассчитывает скорость и ускорение мяча на основе данных из очереди dq.
+    """
+    if len(dq) < 2:
+        return None, None
+
+    # Скорость: разница координат между последними двумя кадрами
+    dx = dq[0][0] - dq[1][0]
+    dy = dq[0][1] - dq[1][1]
+    dt = dq[0][2] - dq[1][2]
+    velocity = (dx / dt, dy / dt) if dt != 0 else (0, 0)
+
+    # Ускорение: разница скоростей между последними двумя кадрами
+    if len(dq) < 3:
+        return velocity, None
+
+    prev_dx = dq[1][0] - dq[2][0]
+    prev_dy = dq[1][1] - dq[2][1]
+    prev_dt = dq[1][2] - dq[2][2]
+    prev_velocity = (prev_dx / prev_dt, prev_dy / prev_dt) if prev_dt != 0 else (0, 0)
+
+    acceleration = (
+        (velocity[0] - prev_velocity[0]) / dt,
+        (velocity[1] - prev_velocity[1]) / dt,
+    ) if dt != 0 else (0, 0)
+
+    return velocity, acceleration
+
+def predict_ball_position(dq):
+    """
+    Прогнозирует положение мяча на основе скорости и ускорения.
+    """
+    if len(dq) < 2:
+        return None
+
+    velocity, acceleration = calculate_velocity_and_acceleration(dq)
+    if velocity is None:
+        return None
+
+    # Прогнозируем новое положение мяча
+    predicted_x = dq[0][0] + velocity[0]
+    predicted_y = dq[0][1] + velocity[1]
+    return int(predicted_x), int(predicted_y)
+
 # Рассчитываем размеры обрезки
 frame_height, frame_width, _ = cap.read()[1].shape
 crop_width, crop_height = calculate_crop_dimensions(frame_width, frame_height)
@@ -184,9 +229,6 @@ while True:
                 #time.sleep(0.1)
                 cv2.putText(img, f'dist: {dicstance:.3f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
                 
-                cv2.circle(img, tuple(center[:2]), radius, (255, 0, 0), 2)
-               
-                cv2.putText(img, f'{conf:.2f} r: {radius}', (center[0] - 10, center[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
                 if skip_spam.get(center[:2]) is None:
                     skip_spam[center[:2]] = 1
 
@@ -197,7 +239,12 @@ while True:
                 if skip_spam[center[:2]] < 5 and dicstance  < (30 * dist_frame):
                     #import pdb; pdb.set_trace()
                     dq.appendleft(center)
-                    
+
+                    cv2.circle(img, tuple(center[:2]), radius, (255, 0, 0), 2)
+               
+                    cv2.putText(img, f'{conf:.2f} r: {radius}', (center[0] - 10, center[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+              
+
                     with open('ball.log', 'a') as file:
                         file.write(f'{frame_num};{center[:2]};{skip_spam[center[:2]]}\n')
                 else:
@@ -220,10 +267,22 @@ while True:
         # Плавное движение кадра по мячу
         ball_center = smooth_crop_movement(previous_ball_center, ball_center)
         previous_ball_center = ball_center
+    else:
+        # Прогнозируем положение мяча, если его нет в текущем кадре
+        ball_center = predict_ball_position(dq)
+        if ball_center:
+            previous_ball_center = ball_center
 
+    if ball_center:
         img = crop_frame_to_ball(img, ball_center, crop_width, crop_height)
-
         cv2.putText(img, f'Ball: {ball_center}', (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+    # Вычисляем скорость и ускорение для отображения
+    velocity, acceleration = calculate_velocity_and_acceleration(dq)
+    if velocity:
+        cv2.putText(img, f'Velocity: {velocity}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+    if acceleration:
+        cv2.putText(img, f'Acceleration: {acceleration}', (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
 
     writer.write(img)
     cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
