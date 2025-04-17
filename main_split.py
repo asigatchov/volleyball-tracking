@@ -20,21 +20,21 @@ def nearest(res, init):
     center = np.stack((mean_c13, mean_c24), axis=1).astype('int')
     distances = np.linalg.norm(center - init, axis=1).astype('float')
     return center[np.argmin(distances)], distances[np.argmin(distances)], np.argmin(distances)
-#model = YOLO("yolo-default/yolo11s.pt") # model name
+# model = YOLO("yolo-default/yolo11s.pt") # model name
 
 file_model = "models/Volley.ball.yolo11n.pt"
 file_model = "yolo11s.pt"
 file_model = "runs/detect/train8/weights/best.pt"
 file_model = "runs/detect/train9/weights/best.pt"
 file_model = "models/defaults/yolo11n.pt"
+file_model = "runs/detect/train_work/train8/weights/best.pt"
 
-
-#file_model = "models/YaphetL.balltrackernet.pt"
+# file_model = "models/YaphetL.balltrackernet.pt"
 model = YOLO(file_model) # model name
 model.to('cuda')
 
 cap = cv2.VideoCapture(video_file) # file name
-#cap = cv2.VideoCapture("video/game_p1_006.mp4") # file name
+# cap = cv2.VideoCapture("video/game_p1_006.mp4") # file name
 
 writer = create_video_writer(cap, "Output6.mp4")  # output file name
 
@@ -68,12 +68,30 @@ def predict_position(dq):
     predicted_y = y1 + speed_y
     return (int(predicted_x), int(predicted_y))  # Прогнозируем x и y
 
+def filter_false_detections(center, spam_list, threshold=3, pixel_tolerance=7):
+    """
+    Фильтрует ложные детекции и неподвижные мячи.
+    Если мяч неподвижен и постоянно детектируется, добавляет его в спам-лист.
+    Также фильтрует детекции по квадрату в 5 пикселей.
+    """
+    for spam_center in spam_list:
+        if abs(center[0] - spam_center[0]) <= pixel_tolerance and abs(center[1] - spam_center[1]) <= pixel_tolerance:
+            spam_list[spam_center] += 1
+            if spam_list[spam_center] > threshold:
+                print(f"Filtered out stationary ball near {spam_center}")
+                return True  # Указывает, что детекция должна быть отфильтрована
+            return False
+
+    spam_list[center[:2]] = 1
+    return False
+
 dq = deque(maxlen=15)  # Очередь для детекций мяча
 dq_predictions = deque(maxlen=15)  # Очередь для детекций и предсказаний
 z = 0
 frame_num = 0
 skip_spam = {}
 no_detection_count = 0  # Счетчик кадров без детекции
+spam_list = {}  # Словарь для хранения неподвижных мячей
 
 while True:
     z += 1
@@ -83,7 +101,8 @@ while True:
         break
 
     frame_num += 1
- 
+
+   # time.sleep(0.1 )
 
     # Разделение кадра на 6 частей
     height, width, _ = img.shape
@@ -116,7 +135,7 @@ while True:
         for box in boxes:
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype('int')
             conf = box.conf[0].cpu().numpy()
-           
+
             if conf >0.69:
                 # Смещение координат обратно в общий кадр
                 x1 += x_offset
@@ -124,7 +143,7 @@ while True:
                 y1 += y_offset
                 y2 += y_offset
 
-                radius = int((x2 - x1) / 2) + 1 
+                radius = int((x2 - x1) / 2) + 1
                 center = (int((x1 + x2) / 2), int((y1 + y2) / 2), frame_num)  # Add frame number to center
                 dicstance = 0
                 dist_frame = 1
@@ -133,15 +152,18 @@ while True:
                     dicstance = calc_distance(dq[0][:2], center[:2], dq[0][2], center[2])  # Pass frame numbers
                 #time.sleep(0.1)
                 cv2.putText(img, f'dist: {dicstance:.3f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                
+
                 cv2.circle(img, tuple(center[:2]), radius, (255, 0, 0), 2)
-               
+
                 cv2.putText(img, f'{conf:.2f} r: {radius}', (center[0] - 10, center[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                if filter_false_detections(center, spam_list):
+                    continue  # Пропускаем неподвижные мячи
+
                 if skip_spam.get(center[:2]) is None:
                     skip_spam[center[:2]] = 1
 
                 skip_spam[center[:2]] += 1
-                print('coord:', center, skip_spam[center[:2]])  
+                print('coord:', center, skip_spam[center[:2]])
 
                 detected = True  # Устанавливаем флаг, если есть детекция
                 no_detection_count = 0  # Сбрасываем счетчик при детекции
@@ -164,7 +186,7 @@ while True:
                 if skip_spam[center[:2]] < 5 and dicstance  < (30 * dist_frame):
                     #import pdb; pdb.set_trace()
                     dq.appendleft(center)
-                    
+
                     with open('ball.log', 'a') as file:
                         file.write(f'{frame_num};{center[:2]};{skip_spam[center[:2]]}\n')
                 else:
@@ -172,7 +194,7 @@ while True:
                         dq.pop()
             else:
                 pass
-               
+
         for i in range(1, len(dq)):
             if dq[i - 1] is None or dq[i] is None:
                 continue
@@ -212,5 +234,5 @@ while True:
         break
 
 cap.release()
-#writer.release()
+# writer.release()
 cv2.destroyAllWindows()
