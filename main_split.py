@@ -25,7 +25,8 @@ def nearest(res, init):
 file_model = "models/Volley.ball.yolo11n.pt"
 file_model = "yolo11s.pt"
 file_model = "runs/detect/train8/weights/best.pt"
-
+file_model = "runs/detect/train9/weights/best.pt"
+file_model = "models/defaults/yolo11n.pt"
 
 
 #file_model = "models/YaphetL.balltrackernet.pt"
@@ -56,26 +57,30 @@ def predict_position(dq):
     """
     if len(dq) < 2:
         return None
-    x1, _, frame1 = dq[0]
-    x2, _, frame2 = dq[1]
+    x1, y1, frame1 = dq[0]
+    x2, y2, frame2 = dq[1]
     frame_diff = frame1 - frame2
     if frame_diff == 0:
         return None
     speed_x = (x1 - x2) / frame_diff
+    speed_y = (y1 - y2) / frame_diff
     predicted_x = x1 + speed_x
-    return (int(predicted_x), dq[0][1])  # Предполагаем, что y остается неизменным
+    predicted_y = y1 + speed_y
+    return (int(predicted_x), int(predicted_y))  # Прогнозируем x и y
 
-dq = deque(maxlen=15)
-z=0
+dq = deque(maxlen=15)  # Очередь для детекций мяча
+dq_predictions = deque(maxlen=15)  # Очередь для детекций и предсказаний
+z = 0
 frame_num = 0
 skip_spam = {}
+no_detection_count = 0  # Счетчик кадров без детекции
+
 while True:
     z += 1
     print(z)
     success, img = cap.read()
     if not success:
         break
-
 
     frame_num += 1
  
@@ -139,6 +144,9 @@ while True:
                 print('coord:', center, skip_spam[center[:2]])  
 
                 detected = True  # Устанавливаем флаг, если есть детекция
+                no_detection_count = 0  # Сбрасываем счетчик при детекции
+                dq.appendleft(center)  # Добавляем только детекции в dq
+                dq_predictions.appendleft(center)  # Добавляем детекции в dq_predictions
                 speed_x = 0
                 acceleration_x = 0
                 if len(dq) > 0:
@@ -171,12 +179,30 @@ while True:
             cv2.line(img, dq[i - 1][:2], dq[i][:2], (0, 0, 255), thickness=5)
             cv2.putText(img, f'Ball: {dq[i][:2]}', (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
-    if not detected and len(dq) > 0:
-        predicted_position = predict_position(dq)
-        if predicted_position:
-            cv2.circle(img, predicted_position, 10, (0, 255, 255), 2)
-            cv2.putText(img, f'Predicted', (predicted_position[0] - 10, predicted_position[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-            dq.appendleft((predicted_position[0], predicted_position[1], frame_num))
+    if not detected:
+        no_detection_count += 1
+        if no_detection_count > 4:
+            print("No detection for 4 frames, stopping predictions.")
+        else:
+            if len(dq) > 0:
+                predicted_position = predict_position(dq)
+                if predicted_position:
+                    dq_predictions.appendleft((predicted_position[0], predicted_position[1], frame_num))  # Добавляем предсказания в dq_predictions
+                    cv2.circle(img, predicted_position, 10, (0, 255, 255), 2)
+                    cv2.putText(img, f'Predicted', (predicted_position[0] - 10, predicted_position[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+    # Визуализация очереди детекций (красным, ширина 5px)
+    for i in range(1, len(dq)):
+        if dq[i - 1] is None or dq[i] is None:
+            continue
+        cv2.line(img, dq[i - 1][:2], dq[i][:2], (0, 0, 255), thickness=9)
+        cv2.putText(img, f'Ball: {dq[i][:2]}', (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+    # Визуализация очереди детекций и предсказаний (желтым, ширина 9px)
+    for i in range(1, len(dq_predictions)):
+        if dq_predictions[i - 1] is None or dq_predictions[i] is None:
+            continue
+        cv2.line(img, dq_predictions[i - 1][:2], dq_predictions[i][:2], (0, 255, 255), thickness=5)
 
     writer.write(img)
     cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
