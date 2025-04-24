@@ -1,0 +1,13 @@
+[project]
+name = "volleyball-tracking"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "lap>=0.5.12",
+    "norfair>=2.2.0",
+    "tensorboard>=2.19.0",
+    "torch>=2.6.0",
+    "ultralytics>=8.3.101",
+]

@@ -6,6 +6,9 @@ from collections import deque
 import time
 import argparse
 
+from norfair import Detection, Tracker, Video, draw_tracked_objects
+
+
 # Добавление парсинга аргументов командной строки
 parser = argparse.ArgumentParser(description="Process a video file.")
 parser.add_argument("video_file", type=str, help="Path to the video file")
@@ -23,13 +26,26 @@ def nearest(res, init):
 # model = YOLO("yolo-default/yolo11s.pt") # model name
 
 file_model = "models/Volley.ball.yolo11n.pt"
-file_model = "yolo11s.pt"
 file_model = "runs/detect/train8/weights/best.pt"
 file_model = "runs/detect/train9/weights/best.pt"
 file_model = "models/defaults/yolo11n.pt"
-file_model = "runs/detect/train_work/train8/weights/best.pt"
 
-# file_model = "models/YaphetL.balltrackernet.pt"
+file_model = "models/default/yolo11n.pt"
+
+file_model = "runs/detect/train12/weights/best.pt"
+
+file_model = "yolo11n.pt"
+file_model = "runs/detect/train_work/train11/weights/best.pt"
+# s
+file_model = "runs/detect/train16/weights/best.pt"
+
+
+file_model = "runs/detect/train21/weights/best.pt"
+
+
+file_model = "runs/detect/train29/weights/best.pt"
+file_model = "runs/detect/train27/weights/best.pt"
+file_model =  "runs/detect/train32/weights/best.pt"
 model = YOLO(file_model) # model name
 model.to('cuda')
 
@@ -102,7 +118,7 @@ while True:
 
     frame_num += 1
 
-   # time.sleep(0.1 )
+    # time.sleep(0.1 )
 
     # Разделение кадра на 6 частей
     height, width, _ = img.shape
@@ -128,15 +144,14 @@ while True:
         y_offset = 0 if idx < 3 else part_height
         x_offset = (idx % 3) * part_width
 
-
         boxes = [_b for _b in boxes if _b.cls[0].cpu().numpy().astype('int') == 0]
 
-        #import pdb ; pdb.set_trace()
+        # import pdb ; pdb.set_trace()
         for box in boxes:
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype('int')
             conf = box.conf[0].cpu().numpy()
 
-            if conf >0.69:
+            if conf >0.40:
                 # Смещение координат обратно в общий кадр
                 x1 += x_offset
                 x2 += x_offset
@@ -150,7 +165,7 @@ while True:
                 if len(dq) > 0:
                     dist_frame = abs(dq[0][2] - center[2])
                     dicstance = calc_distance(dq[0][:2], center[:2], dq[0][2], center[2])  # Pass frame numbers
-                #time.sleep(0.1)
+                # time.sleep(0.1)
                 cv2.putText(img, f'dist: {dicstance:.3f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
                 cv2.circle(img, tuple(center[:2]), radius, (255, 0, 0), 2)
@@ -159,16 +174,20 @@ while True:
                 if filter_false_detections(center, spam_list):
                     continue  # Пропускаем неподвижные мячи
 
-                if skip_spam.get(center[:2]) is None:
-                    skip_spam[center[:2]] = 1
-
-                skip_spam[center[:2]] += 1
-                print('coord:', center, skip_spam[center[:2]])
-
                 detected = True  # Устанавливаем флаг, если есть детекция
                 no_detection_count = 0  # Сбрасываем счетчик при детекции
-                dq.appendleft(center)  # Добавляем только детекции в dq
-                dq_predictions.appendleft(center)  # Добавляем детекции в dq_predictions
+
+                if dicstance < (30 * dist_frame):
+                    # import pdb; pdb.set_trace()
+                    dq.appendleft(center)  # Добавляем только детекции в dq
+                    dq_predictions.appendleft(center)  # Добавляем детекции в dq_predictions
+                    with open("ball.log", "a") as file:
+                        file.write(f"{frame_num};{center[:2]};\n")
+                else:
+                    if len(dq) > 1:
+                        dq.pop()
+
+
                 speed_x = 0
                 acceleration_x = 0
                 if len(dq) > 0:
@@ -183,15 +202,6 @@ while True:
                 cv2.putText(img, f'speed_x: {speed_x:.2f}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
                 cv2.putText(img, f'accel_x: {acceleration_x:.2f}', (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
 
-                if skip_spam[center[:2]] < 5 and dicstance  < (30 * dist_frame):
-                    #import pdb; pdb.set_trace()
-                    dq.appendleft(center)
-
-                    with open('ball.log', 'a') as file:
-                        file.write(f'{frame_num};{center[:2]};{skip_spam[center[:2]]}\n')
-                else:
-                    if len(dq) > 1:
-                        dq.pop()
             else:
                 pass
 
@@ -228,7 +238,7 @@ while True:
 
     writer.write(img)
     cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
-   # cv2.resizeWindow("Image", 1280, 720)        # Устанавливаем размер окна 1280x720
+    # cv2.resizeWindow("Image", 1280, 720)        # Устанавливаем размер окна 1280x720
     cv2.imshow("Image", img)
     if cv2.waitKey(1) == ord("q"):
         break
