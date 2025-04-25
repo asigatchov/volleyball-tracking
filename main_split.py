@@ -34,7 +34,6 @@ file_model = "models/default/yolo11n.pt"
 
 file_model = "runs/detect/train12/weights/best.pt"
 
-file_model = "yolo11n.pt"
 file_model = "runs/detect/train_work/train11/weights/best.pt"
 # s
 file_model = "runs/detect/train16/weights/best.pt"
@@ -47,7 +46,7 @@ file_model = "runs/detect/train29/weights/best.pt"
 file_model = "runs/detect/train27/weights/best.pt"
 file_model =  "runs/detect/train32/weights/best.pt"
 
-file_model = "runs/detect/work/train6/weights/best.pt"
+file_model = "runs/detect/work/train7/weights/best.pt"
 
 model = YOLO(file_model) # model name
 model.to('cuda')
