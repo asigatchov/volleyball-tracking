@@ -46,6 +46,9 @@ file_model = "runs/detect/train21/weights/best.pt"
 file_model = "runs/detect/train29/weights/best.pt"
 file_model = "runs/detect/train27/weights/best.pt"
 file_model =  "runs/detect/train32/weights/best.pt"
+
+file_model = "runs/detect/work/train6/weights/best.pt"
+
 model = YOLO(file_model) # model name
 model.to('cuda')
 
@@ -149,9 +152,12 @@ while True:
         # import pdb ; pdb.set_trace()
         for box in boxes:
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype('int')
-            conf = box.conf[0].cpu().numpy()
 
-            if conf >0.40:
+            if abs((2 - x1) * (y2 - y1)) < 100:
+                continue
+
+            conf = box.conf[0].cpu().numpy()
+            if conf >0.60:
                 # Смещение координат обратно в общий кадр
                 x1 += x_offset
                 x2 += x_offset
