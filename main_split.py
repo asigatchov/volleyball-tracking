@@ -34,7 +34,6 @@ file_model = "models/default/yolo11n.pt"
 
 file_model = "runs/detect/train12/weights/best.pt"
 
-file_model = "yolo11n.pt"
 file_model = "runs/detect/train_work/train11/weights/best.pt"
 # s
 file_model = "runs/detect/train16/weights/best.pt"
@@ -46,6 +45,9 @@ file_model = "runs/detect/train21/weights/best.pt"
 file_model = "runs/detect/train29/weights/best.pt"
 file_model = "runs/detect/train27/weights/best.pt"
 file_model =  "runs/detect/train32/weights/best.pt"
+file_model = "models/asigatchov/yolo11n_crop_ball_10k_img_e200_20250422.pt"
+file_model = "yolo11n.pt"
+_file_model = "models/asigatchov/yolo11n_crop_ball_10k_img_e200_fast_pobeda_20250424.pt"
 model = YOLO(file_model) # model name
 model.to('cuda')
 
