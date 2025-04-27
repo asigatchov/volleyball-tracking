@@ -2,23 +2,22 @@ from ultralytics import YOLO
 
 #model = YOLO('yolo11.yaml')  # или 'yolov8s-seg' для сегментации
 #
-last_model = "/home/projects/vb-soft/volleyball-tracking/models/asigatchov/yolo11n_crop_ball_10k_img_e200_fast_pobeda_20250424.pt"
+last_model = "/home/projects/www/vb-soft/volleyball-tracking/models/asigatchov/yolo11n_crop_ball_10k_img_e200_20250422.pt"
 model = YOLO(last_model)
 
 model.train(
-    data='/home/nssd/gled/vb/dataset-vb/sideline/orel_pobeda/crop/data.yaml',
+    data='/home/nssd/gled/vb/dataset-vb/sideline/quick/crop/data.yaml',
     imgsz=640,
-    epochs=150,
-    batch=32,
+    epochs=100,
+    batch=24,
     lr0=1e-4,
-    augment=False, # false не сработало?
-
-#     box=7.5,  # усиленный вес для bbox loss
-#     cls=0.5,  # уменьшенный вес классификации
-
-    hsv_h=0.3,
-    hsv_s=0.5,
-    degrees=10,
+#    augment=True, # false не сработало?
+    scale=0.75,
+#    box=7.5,  # усиленный вес для bbox loss
+#    cls=0.5,  # уменьшенный вес классификации
+    hsv_h=0.2, # 0.3
+    hsv_s=0.3, #0.5
+    degrees=5,
     flipud=0.5,
     mixup=0.2,
     cache=True,
@@ -26,33 +25,29 @@ model.train(
     pretrained=True,
 # resume=True
 )
-#
-#model = YOLO('yolo11.yaml').load('models/custom/last.pt')
 
-# last_model = "/home/projects/vb-soft/volleyball-tracking/models/asigatchov/yolo11n_crop_ball_10k_img_e200_fast_pobeda_20250424.pt"
-
-# model = YOLO(last_model)
-
-# # Конфигурация обучения
-# results = model.train(
-#     data='/home/nssd/gled/vb/dataset-vb/sideline/orel_pobeda/crop/data.yaml',
-#     imgsz=640,  # увеличенное разрешение
-#     epochs=100,
-#     batch=28,
-#     optimizer='AdamW',
+# model.train(
+#     data='/home/nssd/gled/vb/dataset-vb/sideline/quick/crop/data.yaml',
+#     imgsz=640,
+#     epochs=200,  # Увеличено для мелких объектов
+#     batch=24,    # Максимально возможный размер
 #     lr0=1e-4,
-#     warmup_epochs=3,
-#     box=7.5,  # усиленный вес для bbox loss
-#     cls=0.5,  # уменьшенный вес классификации
-#     hsv_h=0.2,  # увеличенная аугментация цвета
-#     hsv_s=0.8,
-#     hsv_v=0.8,
-#     translate=0.2,
-#     scale=0.5,
-#     fliplr=0.5,
-#     mosaic=1.0,
+#     augment=True,
+#     hsv_h=0.3,   # Увеличенный диапазон
+#     hsv_s=0.5,   # Увеличенная насыщенность
+#     degrees=10,  # Добавлен поворот
+#     flipud=0.5,
 #     mixup=0.2,
-#     copy_paste=0.2,
-#     anchor_t=3.0  # увеличенный порог для анкоров
-#     #close_mosaic=10
+#     translate=0.2,  # Новый параметр
+#     mosaic=1.0,     # Добавлен мозаик
+#     cache=True,
+#     optimizer='AdamW',
+#     pretrained=True,
+#     weight_decay=0.05,
+#     cos_lr=True,    # Косинусный шедулер
+#     lrf=0.1,
+#     rect=True,      # Прямоугольное обучение
+#     close_mosaic=10 # Отключение мозаика в конце
 # )
+
+#

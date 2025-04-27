@@ -6,7 +6,6 @@ from collections import deque
 import time
 import argparse
 
-from norfair import Detection, Tracker, Video, draw_tracked_objects
 
 
 # Добавление парсинга аргументов командной строки
@@ -39,14 +38,18 @@ file_model = "runs/detect/train_work/train11/weights/best.pt"
 file_model = "runs/detect/train16/weights/best.pt"
 
 
-file_model = "runs/detect/train21/weights/best.pt"
-
-
 file_model = "runs/detect/train29/weights/best.pt"
 file_model = "runs/detect/train27/weights/best.pt"
 file_model =  "runs/detect/train32/weights/best.pt"
 
-file_model = "runs/detect/work/train7/weights/best.pt"
+file_model = "runs/detect/train21/weights/best.pt"
+
+file_model = "models/asigatchov/yolo11n_crop_ball_10k_img_e200_20250422.pt"
+file_model = "runs/detect/train34/weights/best.pt"
+file_model = "runs/detect/train6/weights/best.pt"
+
+
+# file_model = "runs/detect/work/train7/weights/best.pt"
 
 model = YOLO(file_model) # model name
 model.to('cuda')
