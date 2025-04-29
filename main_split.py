@@ -49,8 +49,15 @@ file_model = "runs/detect/train34/weights/best.pt"
 file_model = "runs/detect/train6/weights/best.pt"
 
 
-# file_model = "runs/detect/work/train7/weights/best.pt"
+file_model = "runs/detect/train/weights/best.pt"
 
+
+file_model = "models/asigatchov/yolo11n_crop_ball_10k_img_e200_20250422.pt"
+
+file_model = "models/asigatchov/yolo11s_ball_10kimg_640x540_e300_20250428.pt"
+
+file_model = "/tmp/yolo11n_ball_10kimg_640x540_e300_20250428.pt"
+file_model = "runs/detect/train14/weights/best.pt"
 model = YOLO(file_model) # model name
 model.to('cuda')
 
@@ -190,7 +197,7 @@ while True:
                     dq.appendleft(center)  # Добавляем только детекции в dq
                     dq_predictions.appendleft(center)  # Добавляем детекции в dq_predictions
                     with open("ball.log", "a") as file:
-                        file.write(f"{frame_num};{center[:2]};\n")
+                        file.write(f"{frame_num};{center[0]};{center[1]};{radius}\n")
                 else:
                     if len(dq) > 1:
                         dq.pop()

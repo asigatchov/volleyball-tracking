@@ -27,12 +27,11 @@ file_model = "yolo11s.pt"
 file_model = "runs/detect/train8/weights/best.pt"
 file_model = "runs/detect/train_work/train8/weights/best.pt"
 
-file_model = "runs/detect/train12/weights/best.pt"
 
 
-file_model = "runs/detect/train22/weights/best.pt"
 
-file_model = "runs/detect/train11/weights/best.pt"
+file_model = "models/asigatchov/yolo11s_ball_10kimg_640x540_e300_20250428.pt"
+
 
 # file_model = "runs/detect/train_work/train11/weights/best.pt"
 # file_model = "models/YaphetL.balltrackernet.pt"
