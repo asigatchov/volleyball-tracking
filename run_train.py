@@ -6,6 +6,8 @@ last_model = '/home/projects/vb-soft/volleyball-tracking/runs/detect/train2/weig
 last_model = "/home/projects/vb-soft/volleyball-tracking/models/asigatchov/yolo11n_crop_ball_10k_img_e200_20250422.pt"
 
 last_model = "models/defaults/yolo11s.pt"
+
+last_model =  "./runs/detect/train20/weights/last.pt"
 model = YOLO(last_model)
 
 data="/home/nssd/gled/vb/dataset-vb/volleyball_custom_dataset_640x540/data.yaml"
@@ -15,7 +17,7 @@ data='/home/nssd/gled/vb/dataset-vb/sideline/quick/crop/data.yaml'
 model.train(
     data=data,
     imgsz=640,
-    epochs=100,
+    epochs=133,
     batch=32,
     lr0=1e-4,
     augment=True, # false не сработало?
@@ -29,8 +31,8 @@ model.train(
     mixup=0.2,
     cache=True,
     optimizer='AdamW',
-    pretrained=True
-    #    resume=True
+    pretrained=True,
+    resume=True
 )
 
 # model.train(
