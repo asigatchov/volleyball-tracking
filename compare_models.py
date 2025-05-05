@@ -18,9 +18,9 @@ video_file = args.video_file  # Получение пути к видеофай�
 models = []
 
 model_files = [
-    "runs/detect/train11/weights/best.pt",
-    "runs/detect/train6/weights/best.pt",
-    "runs/detect/train8/weights/best.pt",
+    "runs/detect/train20/weights/best.pt",
+    #"runs/detect/train15/weights/best.pt",
+    #"runs/detect/train8/weights/best.pt",
 
     ]
 

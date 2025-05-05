@@ -7,7 +7,6 @@ import time
 import argparse
 
 
-
 # Добавление парсинга аргументов командной строки
 parser = argparse.ArgumentParser(description="Process a video file.")
 parser.add_argument("video_file", type=str, help="Path to the video file")
@@ -24,32 +23,14 @@ def nearest(res, init):
     return center[np.argmin(distances)], distances[np.argmin(distances)], np.argmin(distances)
 # model = YOLO("yolo-default/yolo11s.pt") # model name
 
-file_model = "models/Volley.ball.yolo11n.pt"
-file_model = "runs/detect/train8/weights/best.pt"
-file_model = "runs/detect/train9/weights/best.pt"
-file_model = "models/defaults/yolo11n.pt"
+file_model = "models/asigatchov/yolo11x_ball_10kimg_640x540_e300_20250428.pt"
+# file_model = (
+#  "models/asigatchov/yolo11s_ball_10kimg_640x540_e300_20250428.pt"
+# )
 
-file_model = "models/default/yolo11n.pt"
-
-file_model = "runs/detect/train12/weights/best.pt"
-
-file_model = "runs/detect/train_work/train11/weights/best.pt"
-# s
-file_model = "runs/detect/train16/weights/best.pt"
-
-
-file_model = "runs/detect/train29/weights/best.pt"
-file_model = "runs/detect/train27/weights/best.pt"
-file_model =  "runs/detect/train32/weights/best.pt"
+file_model = "yolo11s-obb.pt"
 
 file_model = "runs/detect/train21/weights/best.pt"
-
-file_model = "models/asigatchov/yolo11n_crop_ball_10k_img_e200_20250422.pt"
-file_model = "runs/detect/train34/weights/best.pt"
-file_model = "runs/detect/train6/weights/best.pt"
-
-
-# file_model = "runs/detect/work/train7/weights/best.pt"
 
 model = YOLO(file_model) # model name
 model.to('cuda')
@@ -114,6 +95,13 @@ skip_spam = {}
 no_detection_count = 0  # Счетчик кадров без детекции
 spam_list = {}  # Словарь для хранения неподвижных мячей
 
+def preprocess_frame(frame):
+    # Улучшение контраста
+    #frame = cv2.equalizeHist(frame)
+    # Размытие для уменьшения шума
+    frame = cv2.GaussianBlur(frame, (3, 3), 0)
+    return frame
+
 while True:
     z += 1
     print(z)
@@ -123,8 +111,7 @@ while True:
 
     frame_num += 1
 
-    # time.sleep(0.1 )
-
+    img = preprocess_frame(img)
     # Разделение кадра на 6 частей
     height, width, _ = img.shape
     part_height = height // 2
@@ -138,6 +125,12 @@ while True:
         img[part_height:height, part_width:2*part_width],  # Нижний средний
         img[part_height:height, 2*part_width:width],  # Нижний правый
     ]
+
+    # Рисуем черные линии для визуализации разделения
+    for i in range(1, 3):  # Вертикальные линии
+        cv2.line(img, (i * part_width, 0), (i * part_width, height), (0, 0, 0), 2)
+    for i in range(1, 2):  # Горизонтальная линия
+        cv2.line(img, (0, i * part_height), (width, i * part_height), (0, 0, 0), 2)
 
     # Обработка частей батчем
     results = model(sub_images, stream=True)
@@ -194,7 +187,6 @@ while True:
                 else:
                     if len(dq) > 1:
                         dq.pop()
-
 
                 speed_x = 0
                 acceleration_x = 0

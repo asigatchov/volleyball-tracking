@@ -3,16 +3,20 @@ from ultralytics import YOLO
 #model = YOLO('yolo11.yaml')  # или 'yolov8s-seg' для сегментации
 #
 last_model = "/home/projects/www/vb-soft/volleyball-tracking/models/asigatchov/yolo11n_crop_ball_10k_img_e200_20250422.pt"
+last_model = 'models/defults/yolo11n.pt'
+#last_model = "runs/detect/train22/weights/last.pt"
 model = YOLO(last_model)
 
+data='/home/nssd/gled/vb/dataset-vb/volleyball_custom_dataset_640x540/data.yaml'
+data = '/home/nssd/gled/vb/dataset-vb/sideline/quick/crop/data.yaml'
 model.train(
-    data='/home/nssd/gled/vb/dataset-vb/sideline/quick/crop/data.yaml',
+    data=data,
     imgsz=640,
-    epochs=100,
+    epochs=130,
     batch=24,
     lr0=1e-4,
-#    augment=True, # false не сработало?
-    scale=0.75,
+    augment=True, # false не сработало?
+    scale=0.80,
 #    box=7.5,  # усиленный вес для bbox loss
 #    cls=0.5,  # уменьшенный вес классификации
     hsv_h=0.2, # 0.3
@@ -23,7 +27,7 @@ model.train(
     cache=True,
     optimizer='AdamW',
     pretrained=True,
-# resume=True
+    #resume=True
 )
 
 # model.train(
