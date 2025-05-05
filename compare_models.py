@@ -18,30 +18,38 @@ video_file = args.video_file  # Получение пути к видеофай�
 models = []
 
 model_files = [
-    "runs/detect/train20/weights/best.pt",
-    #"runs/detect/train15/weights/best.pt",
-    #"runs/detect/train8/weights/best.pt",
-
+    "runs/detect/train24/weights/best.pt",
+    "runs/detect/train22/weights/best.pt"
     ]
 
 for file_model in model_files:
     models.append( YOLO(file_model).to('cuda') )  # model name
 
-cap = cv2.VideoCapture(video_file)  # file name
-
 # Define colors for each model
 colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]  # Red, Green, Blue
 
 z = 0  # Initialize z
+
+def video_frame_generator(video_file):
+    """
+    Generator function to read frames from a video file.
+    """
+    cap = cv2.VideoCapture(video_file)
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+        yield frame
+    cap.release()
+
 frame_num = 0  # Initialize frame_num
 
-while True:
+
+
+
+for img in video_frame_generator(video_file):
     z += 1
     print(z)
-    success, img = cap.read()
-    if not success:
-        break
-
     frame_num += 1
 
     # Разделение кадра на 6 частей
@@ -61,7 +69,7 @@ while True:
     # Add model names with colors in the top-left corner
     for i, model_file in enumerate(model_files):
         color = colors[i % len(colors)]  # Assign color to the model
-        model_name = model_file.split("/")[-3]  # Extract model name from path
+        model_name = model_file.split("/")[-3] # Extract model name from path
         cv2.putText(
             img,
             model_name,
@@ -99,11 +107,12 @@ while True:
                 )
 
     # Display the image with detections
+
+    cv2.namedWindow("Detections", cv2.WINDOW_NORMAL)  # Allow resizing of the window
     cv2.imshow("Detections", img)
     time.sleep(0.1)  # Add a small delay to control the frame rate
     # Break on 'q' key press
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
 
-cap.release()
 cv2.destroyAllWindows()

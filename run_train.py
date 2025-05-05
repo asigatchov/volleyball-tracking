@@ -11,6 +11,7 @@ data='/home/nssd/gled/vb/dataset-vb/volleyball_custom_dataset_640x540/data.yaml'
 data = '/home/nssd/gled/vb/dataset-vb/sideline/quick/crop/data.yaml'
 model.train(
     data=data,
+    data=data,
     imgsz=640,
     epochs=130,
     batch=24,

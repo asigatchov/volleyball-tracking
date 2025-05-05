@@ -1,5 +1,4 @@
 version = 1
-revision = 1
 requires-python = ">=3.13"
 resolution-markers = [
     "sys_platform == 'win32'",
@@ -599,6 +598,21 @@ wheels = [
 ]
 
 [[package]]
+name = "pykalman"
+version = "0.10.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "scikit-base" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2f/17/7d43c93b06dec3070f9c38c594dfc10eb87978b86169bd5769cc034f2dc7/pykalman-0.10.1.tar.gz", hash = "sha256:c3019211d6551f6a84e9f08d3a6d11d5ace95d544e361b9cecc633041f74c139", size = 240708 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/eb/c38ec36ec30206974e572162623890ba4770fb0c29b96a82eaebeb97ce03/pykalman-0.10.1-py2.py3-none-any.whl", hash = "sha256:769a531bfd8dd0c4de562794648220f5523567ef6bb7fac09daf1acdfa205b55", size = 248515 },
+]
+
+[[package]]
 name = "pyparsing"
 version = "3.2.3"
 source = { registry = "https://pypi.org/simple" }
@@ -671,6 +685,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/11/23/814edf09ec6470d52022b9e95c23c1bef77f0bc451761e1504ebd09606d3/rich-12.6.0.tar.gz", hash = "sha256:ba3a3775974105c221d31141f2c116f4fd65c5ceb0698657a11e9f295ec93fd0", size = 220114 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/60/81ac2e7d1e3b861ab478a72e3b20fc91c4302acd2274822e493758941829/rich-12.6.0-py3-none-any.whl", hash = "sha256:a4eb26484f2c82589bd9a17c73d32a010b1e29d89f1604cd9bf3a2097b81bb5e", size = 237505 },
+]
+
+[[package]]
+name = "scikit-base"
+version = "0.12.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/be/af4650c4ba4e89d6deeff66dbe214fe5755783acf1de3cd250eac2748e4c/scikit_base-0.12.2.tar.gz", hash = "sha256:a09ef6c966288657275bd35554301303160c3b9d2eb755802515cf4034cb3f11", size = 119721 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/50/5e7bd8784f255a37f7861c5199143748ace6c0562824a9217d7c4bef300e/scikit_base-0.12.2-py3-none-any.whl", hash = "sha256:068092a9accb53c5d109eb2822333d67a2ca0d92553a97b0655de06f2fc35e7a", size = 142684 },
 ]
 
 [[package]]
@@ -920,6 +943,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "lap" },
     { name = "norfair" },
+    { name = "pykalman" },
     { name = "tensorboard" },
     { name = "torch" },
     { name = "ultralytics" },
@@ -929,6 +953,7 @@ dependencies = [
 requires-dist = [
     { name = "lap", specifier = ">=0.5.12" },
     { name = "norfair", specifier = ">=2.2.0" },
+    { name = "pykalman", specifier = ">=0.10.1" },
     { name = "tensorboard", specifier = ">=2.19.0" },
     { name = "torch", specifier = ">=2.6.0" },
     { name = "ultralytics", specifier = ">=8.3.101" },
