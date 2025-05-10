@@ -28,10 +28,10 @@ file_model = "runs/detect/train8/weights/best.pt"
 file_model = "runs/detect/train_work/train8/weights/best.pt"
 
 
-
-
 file_model = "models/asigatchov/yolo11s_ball_10kimg_640x540_e300_20250428.pt"
-
+file_model = "yolo11s.pt"
+file_model = "models/asigatchov/yolo11x_ball_10kimg_640x540_e300_20250428.pt"
+# file_model = "runs/detect/train3/weights/best.pt"
 
 # file_model = "runs/detect/train_work/train11/weights/best.pt"
 # file_model = "models/YaphetL.balltrackernet.pt"
@@ -220,6 +220,11 @@ previous_ball_center = None  # Переменная для хранения по
 
 no_detection_count = 0  # Счетчик кадров без детекции
 
+def log_save(center):
+    with open("log.txt", "a") as f:
+        f.write(f"{center[0]} {center[1]} {center[2]}\n")  # Сохраняем только координаты и номер кадра
+
+
 while True:
     z += 1
     print(z)
@@ -260,12 +265,14 @@ while True:
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype("int")
             conf = box.conf[0].cpu().numpy()
 
-            if conf > 0.50:
+            if conf > 0.70:
                 # Смещение координат обратно в общий кадр
                 x1 += x_offset
                 x2 += x_offset
                 y1 += y_offset
                 y2 += y_offset
+
+
 
                 radius = int((x2 - x1) / 2) + 1
                 center = (
@@ -273,6 +280,14 @@ while True:
                     int((y1 + y2) / 2),
                     frame_num,
                 )  # Add frame number to center
+
+
+                if radius > 10:
+                    continue
+
+                log_save(center)
+                # print("center:", center, "frame_num:", frame_num)
+
                 dicstance = 0
                 dist_frame = 1
                 if len(dq) > 0:

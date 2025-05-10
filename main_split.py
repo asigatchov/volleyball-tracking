@@ -23,22 +23,8 @@ def nearest(res, init):
     return center[np.argmin(distances)], distances[np.argmin(distances)], np.argmin(distances)
 # model = YOLO("yolo-default/yolo11s.pt") # model name
 
-file_model = "models/asigatchov/yolo11x_ball_10kimg_640x540_e300_20250428.pt"
-# file_model = (
-#  "models/asigatchov/yolo11s_ball_10kimg_640x540_e300_20250428.pt"
-# )
-
-file_model = "yolo11s-obb.pt"
-
-file_model = "runs/detect/train21/weights/best.pt"
-
-
-file_model = "models/asigatchov/yolo11n_crop_ball_10k_img_e200_20250422.pt"
-
-file_model = "models/asigatchov/yolo11s_ball_10kimg_640x540_e300_20250428.pt"
-
-file_model = "/tmp/yolo11n_ball_10kimg_640x540_e300_20250428.pt"
-file_model = "runs/detect/train14/weights/best.pt"
+file_model = 'runs/detect/train7/weights/best.pt'  # Путь к модели
+#file_model = "yolov10s.pt"
 model = YOLO(file_model) # model name
 model.to('cuda')
 
@@ -109,17 +95,11 @@ def preprocess_frame(frame):
     frame = cv2.GaussianBlur(frame, (3, 3), 0)
     return frame
 
-while True:
-    z += 1
-    print(z)
-    success, img = cap.read()
-    if not success:
-        break
-
-    frame_num += 1
-
-    img = preprocess_frame(img)
-    # Разделение кадра на 6 частей
+def process_image_parts(img, model ,threshold=0.6):
+    """
+    Разделяет изображение на 6 частей, обрабатывает их моделью и возвращает найденные объекты
+    с пересчитанными координатами для полного изображения.
+    """
     height, width, _ = img.shape
     part_height = height // 2
     part_width = width // 3
@@ -143,7 +123,7 @@ while True:
     results = model(sub_images, stream=True)
 
     # Объединение результатов обратно в один кадр
-    detected = False  # Флаг для проверки наличия детекции
+    detected_objects = []
     for idx, r in enumerate(results):
         boxes = r.boxes
         y_offset = 0 if idx < 3 else part_height
@@ -151,7 +131,6 @@ while True:
 
         boxes = [_b for _b in boxes if _b.cls[0].cpu().numpy().astype('int') == 0]
 
-        # import pdb ; pdb.set_trace()
         for box in boxes:
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype('int')
 
@@ -159,64 +138,138 @@ while True:
                 continue
 
             conf = box.conf[0].cpu().numpy()
-            if conf >0.60:
+            if conf > threshold:
                 # Смещение координат обратно в общий кадр
                 x1 += x_offset
                 x2 += x_offset
                 y1 += y_offset
                 y2 += y_offset
 
-                radius = int((x2 - x1) / 2) + 1
-                center = (int((x1 + x2) / 2), int((y1 + y2) / 2), frame_num)  # Add frame number to center
-                dicstance = 0
-                dist_frame = 1
-                if len(dq) > 0:
-                    dist_frame = abs(dq[0][2] - center[2])
-                    dicstance = calc_distance(dq[0][:2], center[:2], dq[0][2], center[2])  # Pass frame numbers
-                # time.sleep(0.1)
-                cv2.putText(img, f'dist: {dicstance:.3f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                detected_objects.append({
+                    "x1": x1,
+                    "y1": y1,
+                    "x2": x2,
+                    "y2": y2,
+                    "confidence": conf
+                })
 
-                cv2.circle(img, tuple(center[:2]), radius, (255, 0, 0), 2)
+    return detected_objects
 
-                cv2.putText(img, f'{conf:.2f} r: {radius}', (center[0] - 10, center[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                if filter_false_detections(center, spam_list):
-                    continue  # Пропускаем неподвижные мячи
+def process_two_regions(img, model, threshold=0.6):
+    """
+    Обрабатывает два участка 1024x1024: один слева, другой справа, выравнивая их по краям.
+    Возвращает результаты детекции в пространстве координат 1920x1080.
+    """
+    height, width, _ = img.shape
 
-                detected = True  # Устанавливаем флаг, если есть детекция
-                no_detection_count = 0  # Сбрасываем счетчик при детекции
+    scale =  width / 1920
 
-                if dicstance < (30 * dist_frame):
-                    # import pdb; pdb.set_trace()
-                    dq.appendleft(center)  # Добавляем только детекции в dq
-                    dq_predictions.appendleft(center)  # Добавляем детекции в dq_predictions
-                    with open("ball.log", "a") as file:
-                        file.write(f"{frame_num};{center[0]};{center[1]};{radius}\n")
-                else:
-                    if len(dq) > 1:
-                        dq.pop()
+    region_size = int(1024 * scale)
+    vertical_offset = (height - region_size) // 2  # Отступ сверху и снизу
 
-                speed_x = 0
-                acceleration_x = 0
-                if len(dq) > 0:
-                    prev_x, _, prev_frame = dq[0]
-                    frame_diff = frame_num - prev_frame
-                    if frame_diff > 0:
-                        speed_x = (center[0] - prev_x) / frame_diff
-                        if len(dq) > 1:
-                            prev_speed_x = (prev_x - dq[1][0]) / (prev_frame - dq[1][2])
-                            acceleration_x = (speed_x - prev_speed_x) / frame_diff
+    # Рисуем горизонтальные красные линии с отступом сверху и снизу
+    cv2.line(img, (0, vertical_offset), (width, vertical_offset), (0, 0, 255), 2)  # Верхняя линия
+    cv2.line(img, (0, height - vertical_offset), (width, height - vertical_offset), (0, 0, 255), 2)  # Нижняя линия
 
-                cv2.putText(img, f'speed_x: {speed_x:.2f}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-                cv2.putText(img, f'accel_x: {acceleration_x:.2f}', (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
+    # Определяем два региона
+    left_region = img[vertical_offset:vertical_offset + region_size, 0:region_size]
+    right_region = img[vertical_offset:vertical_offset + region_size, width - region_size:width]
 
-            else:
-                pass
+    print("Left region shape:", left_region.shape)
+    print("Right region shape:", right_region.shape)
+    # Обрабатываем регионы моделью
+    results = model([left_region, right_region], stream=True)
 
-        for i in range(1, len(dq)):
-            if dq[i - 1] is None or dq[i] is None:
-                continue
-            cv2.line(img, dq[i - 1][:2], dq[i][:2], (0, 0, 255), thickness=5)
-            cv2.putText(img, f'Ball: {dq[i][:2]}', (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+    cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
+    detected_objects = []
+    for idx, r in enumerate(results):
+        boxes = r.boxes
+        x_offset = 0 if idx == 0 else width - region_size  # Смещение: 0 для левого региона, width - region_size для правого
+        y_offset = vertical_offset
+
+        boxes = [_b for _b in boxes if _b.cls[0].cpu().numpy().astype('int') == 0]
+
+        for box in boxes:
+            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype('int')
+
+            conf = box.conf[0].cpu().numpy()
+            if conf > threshold:
+                # Смещение координат обратно в общий кадр
+                x1 += x_offset
+                x2 += x_offset
+                y1 += y_offset
+                y2 += y_offset
+
+                detected_objects.append({
+                    "x1": x1,
+                    "y1": y1,
+                    "x2": x2,
+                    "y2": y2,
+                    "confidence": conf
+                })
+
+    return detected_objects
+
+while True:
+    z += 1
+    print(z)
+    success, img = cap.read()
+    if not success:
+        break
+
+    frame_num += 1
+
+    # Используем новую функцию для обработки изображения
+    #detected_objects = process_image_parts(img, model)
+    detected_objects = process_two_regions(img, model)
+
+    detected = False
+    print("Detected objects:", detected_objects)
+    # Обработка найденных объектов
+    for obj in detected_objects:
+        x1, y1, x2, y2, conf = obj["x1"], obj["y1"], obj["x2"], obj["y2"], obj["confidence"]
+        radius = int((x2 - x1) / 2) + 1
+        center = (int((x1 + x2) / 2), int((y1 + y2) / 2), frame_num)
+        dicstance = 0
+        dist_frame = 1
+        if len(dq) > 0:
+            dist_frame = abs(dq[0][2] - center[2])
+            dicstance = calc_distance(dq[0][:2], center[:2], dq[0][2], center[2])  # Pass frame numbers
+        # time.sleep(0.1)
+        cv2.putText(img, f'dist: {dicstance:.3f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+        cv2.circle(img, tuple(center[:2]), radius, (255, 0, 0), 2)
+
+        cv2.putText(img, f'{conf:.2f} r: {radius}', (center[0] - 10, center[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        if filter_false_detections(center, spam_list):
+            continue  # Пропускаем неподвижные мячи
+
+        detected = True  # Устанавливаем флаг, если есть детекция
+        no_detection_count = 0  # Сбрасываем счетчик при детекции
+
+        if dicstance < (30 * dist_frame):
+            # import pdb; pdb.set_trace()
+            dq.appendleft(center)  # Добавляем только детекции в dq
+            dq_predictions.appendleft(center)  # Добавляем детекции в dq_predictions
+            with open("ball.log", "a") as file:
+                file.write(f"{frame_num};{center[0]};{center[1]};{radius}\n")
+        else:
+            if len(dq) > 1:
+                dq.pop()
+
+        speed_x = 0
+        acceleration_x = 0
+        if len(dq) > 0:
+            prev_x, _, prev_frame = dq[0]
+            frame_diff = frame_num - prev_frame
+            if frame_diff > 0:
+                speed_x = (center[0] - prev_x) / frame_diff
+                if len(dq) > 1:
+                    prev_speed_x = (prev_x - dq[1][0]) / (prev_frame - dq[1][2])
+                    acceleration_x = (speed_x - prev_speed_x) / frame_diff
+
+        cv2.putText(img, f'speed_x: {speed_x:.2f}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        cv2.putText(img, f'accel_x: {acceleration_x:.2f}', (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
 
     if not detected:
         no_detection_count += 1
