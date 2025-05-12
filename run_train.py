@@ -7,33 +7,53 @@ last_model = "/home/projects/vb-soft/volleyball-tracking/models/asigatchov/yolo1
 
 last_model = "models/defaults/yolo11s.pt"
 
-last_model =  "./runs/detect/train20/weights/last.pt"
+last_model =  "./runs/detect/train26/weights/last.pt"
 model = YOLO(last_model)
 
 data="/home/nssd/gled/vb/dataset-vb/volleyball_custom_dataset_640x540/data.yaml"
 
 
 data='/home/nssd/gled/vb/dataset-vb/sideline/quick/crop/data.yaml'
+data='/home/projects/vb-soft/datasets/hokkey/crop/data.yaml'
+# model.train(
+#     data=data,
+#     imgsz=640,
+#     epochs=133,
+#     batch=20,
+#     lr0=1e-4,
+#     augment=True, # false не сработало?
+#     scale=0.75,
+# #    box=7.5,  # усиленный вес для bbox loss
+# #    cls=0.5,  # уменьшенный вес классификации
+#     hsv_h=0.2, # 0.3
+#     hsv_s=0.3, #0.5
+#     degrees=5,
+#     flipud=0.5,
+#     mixup=0.2,
+#     cache=True,
+#     optimizer='AdamW',
+#     pretrained=True,
+# #    resume=True
+# )
+
 model.train(
     data=data,
     imgsz=640,
     epochs=133,
-    batch=32,
+    batch=20,
     lr0=1e-4,
-    augment=True, # false не сработало?
-    scale=0.75,
-#    box=7.5,  # усиленный вес для bbox loss
-#    cls=0.5,  # уменьшенный вес классификации
-    hsv_h=0.2, # 0.3
-    hsv_s=0.3, #0.5
+    translate = 0.0,
+    scale = 0,
+    flipud = 0.5,
+    fliplr = 0.5,
+    mosaic = 0.0,
+    erasing = 0.0,
+    hsv_s = 0.5,
+    hsv_v = 0.3,
     degrees=5,
-    flipud=0.5,
-    mixup=0.2,
-    cache=True,
-    optimizer='AdamW',
-    pretrained=True,
     resume=True
 )
+
 
 # model.train(
 #     data='/home/nssd/gled/vb/dataset-vb/sideline/quick/crop/data.yaml',
