@@ -18,9 +18,8 @@ video_file = args.video_file  # Получение пути к видеофай�
 models = []
 
 model_files = [
-    # "models/asigatchov/yolo11s_ball_10kimg_640x540_e300_20250428.pt",
-    "runs/detect/train14/weights/best.pt",
-    "runs/detect/train15/weights/best.pt"
+    "runs/detect/train24/weights/best.pt",
+    "runs/detect/train22/weights/best.pt"
     ]
 
 for file_model in model_files:
@@ -47,7 +46,7 @@ frame_num = 0  # Initialize frame_num
 
 
 
-    
+
 for img in video_frame_generator(video_file):
     z += 1
     print(z)
