@@ -9,10 +9,19 @@ import argparse
 
 # Добавление парсинга аргументов командной строки
 parser = argparse.ArgumentParser(description="Process a video file.")
+
 parser.add_argument("video_file", type=str, help="Path to the video file")
+parser.add_argument(
+        "--model_primary_path",
+        "-mp",
+        type=str,
+        required=True,
+        help="Path to the primary YOLO model",
+    )
 args = parser.parse_args()
 
 video_file = args.video_file  # Получение пути к видеофайлу из аргументов командной строки
+file_model = args.model_primary_path  # Путь к модели
 
 def nearest(res, init):
     box = res.xyxy.cpu().numpy().astype('int')
@@ -23,8 +32,7 @@ def nearest(res, init):
     return center[np.argmin(distances)], distances[np.argmin(distances)], np.argmin(distances)
 # model = YOLO("yolo-default/yolo11s.pt") # model name
 
-file_model = 'runs/detect/train3/weights/best.pt'  # Путь к модели
-#file_model = "yolov10s.pt"
+# file_model = "yolov10s.pt"
 model = YOLO(file_model) # model name
 model.to('cuda')
 
@@ -81,7 +89,6 @@ def filter_false_detections(center, spam_list, threshold=3, pixel_tolerance=7):
     return False
 
 dq = deque(maxlen=15)  # Очередь для детекций мяча
-dframes = deque(maxlen=3)  # Очередь для кадров
 dq_predictions = deque(maxlen=15)  # Очередь для детекций и предсказаний
 z = 0
 frame_num = 0
@@ -211,6 +218,20 @@ def process_two_regions(img, model, threshold=0.6):
 
     return detected_objects
 
+frame_queue = deque(maxlen=3)  # Очередь для хранения трех последовательных кадров
+
+def create_detection_frame(queue):
+    """
+    Создает новый кадр для детекции из трех последовательных кадров.
+    Красный канал - первый кадр, зеленый - второй, синий - третий.
+    """
+    if len(queue) < 3:
+        return None
+    r = queue[0]
+    g = queue[1]
+    b = queue[2]
+    return cv2.merge((r,g, b))  # Объединяем каналы в один кадр
+
 while True:
     z += 1
     print(z)
@@ -220,9 +241,17 @@ while True:
 
     frame_num += 1
 
-    # Используем новую функцию для обработки изображения
-    #detected_objects = process_image_parts(img, model)
-    detected_objects = process_two_regions(img, model)
+    # Преобразуем кадр в grayscale и добавляем в очередь
+    gray_frame = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    frame_queue.append(gray_frame)
+
+    # Создаем новый кадр для детекции
+    detection_frame = create_detection_frame(frame_queue)
+    if detection_frame is None:
+        continue  # Пропускаем, если недостаточно кадров
+
+    # Используем новый кадр для обработки
+    detected_objects = process_two_regions(detection_frame, model)
 
     detected = False
     print("Detected objects:", detected_objects)
