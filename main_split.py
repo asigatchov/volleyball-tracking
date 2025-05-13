@@ -10,9 +10,17 @@ import argparse
 # Добавление парсинга аргументов командной строки
 parser = argparse.ArgumentParser(description="Process a video file.")
 parser.add_argument("video_file", type=str, help="Path to the video file")
+parser.add_argument(
+        "--model_primary_path",
+        "-mp",
+        type=str,
+        required=True,
+        help="Path to the primary YOLO model",
+    )
 args = parser.parse_args()
 
 video_file = args.video_file  # Получение пути к видеофайлу из аргументов командной строки
+file_model = args.model_primary_path  # Путь к модели
 
 def nearest(res, init):
     box = res.xyxy.cpu().numpy().astype('int')
@@ -22,9 +30,8 @@ def nearest(res, init):
     distances = np.linalg.norm(center - init, axis=1).astype('float')
     return center[np.argmin(distances)], distances[np.argmin(distances)], np.argmin(distances)
 # model = YOLO("yolo-default/yolo11s.pt") # model name
-
-file_model = 'runs/detect/train3/weights/best.pt'  # Путь к модели
 #file_model = "yolov10s.pt"
+
 model = YOLO(file_model) # model name
 model.to('cuda')
 
@@ -156,6 +163,34 @@ def process_image_parts(img, model ,threshold=0.6):
 
     return detected_objects
 
+def process_whole_image(img, model, threshold=0.2):
+    results = model.track(img, stream=True)
+
+    detected_objects = []
+    for idx, r in enumerate(results):
+        boxes = r.boxes
+      
+
+       # boxes = [_b for _b in boxes if _b.cls[0].cpu().numpy().astype('int') == 0]
+
+        for box in boxes:
+            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype('int')
+            if box.id is not None:
+                obj_id = box.id.cpu().numpy().astype('int')
+                print('obj-id:',obj_id)
+            conf = box.conf[0].cpu().numpy()
+            if conf > threshold:
+                 detected_objects.append({
+                    "x1": x1,
+                    "y1": y1,
+                    "x2": x2,
+                    "y2": y2,
+                    "confidence": conf
+                })
+
+    return detected_objects
+
+
 def process_two_regions(img, model, threshold=0.6):
     """
     Обрабатывает два участка 1024x1024: один слева, другой справа, выравнивая их по краям.
@@ -179,20 +214,25 @@ def process_two_regions(img, model, threshold=0.6):
     print("Left region shape:", left_region.shape)
     print("Right region shape:", right_region.shape)
     # Обрабатываем регионы моделью
-    results = model([left_region, right_region], stream=True)
+    #results = model([left_region, right_region], stream=True)
 
-    cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
+    results = model.track([left_region, right_region], conf=0.3, iou=0.5, show=False, stream=True)
     detected_objects = []
     for idx, r in enumerate(results):
         boxes = r.boxes
         x_offset = 0 if idx == 0 else width - region_size  # Смещение: 0 для левого региона, width - region_size для правого
         y_offset = vertical_offset
 
-        boxes = [_b for _b in boxes if _b.cls[0].cpu().numpy().astype('int') == 0]
 
+
+       # boxes = [_b for _b in boxes if _b.cls[0].cpu().numpy().astype('int') == 0]
+        
+       
+       
         for box in boxes:
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype('int')
-
+            obj_id = box.id.cpu().numpy().astype('int')
+            print('obj-id:',obj_id)
             conf = box.conf[0].cpu().numpy()
             if conf > threshold:
                 # Смещение координат обратно в общий кадр
@@ -222,7 +262,9 @@ while True:
 
     # Используем новую функцию для обработки изображения
     #detected_objects = process_image_parts(img, model)
-    detected_objects = process_two_regions(img, model)
+    #detected_objects = process_two_regions(img, model)
+
+    detected_objects =  process_whole_image(img, model)
 
     detected = False
     print("Detected objects:", detected_objects)
