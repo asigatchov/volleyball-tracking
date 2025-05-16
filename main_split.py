@@ -262,9 +262,9 @@ while True:
 
     # Используем новую функцию для обработки изображения
     #detected_objects = process_image_parts(img, model)
-    #detected_objects = process_two_regions(img, model)
+    detected_objects = process_two_regions(img, model)
 
-    detected_objects =  process_whole_image(img, model)
+    #detected_objects =  process_whole_image(img, model)
 
     detected = False
     print("Detected objects:", detected_objects)

@@ -3,11 +3,11 @@ from ultralytics import YOLO
 # model = YOLO('yolo11.yaml')  # или 'yolov8s-seg' для сегментации
 #
 last_model = "models/defaults/yolo11n.pt"
-#last_model = 'models/asigatchov/yolo11n_gray3frame_ball_1024_e80_1k.pt'
+last_model = "models/asigatchov/yolo11n_gray3frame_ball_1024_e100_5k.pt"
+last_model = 'runs/detect/train3/weights/best.pt'
 model = YOLO(last_model)
 
-data = "/home/projects/vb-soft/datasets/gray3frame/crop/data.yaml"
-data = "/home/projects/vb-soft/datasets/home/crop/data.yaml"
+data = "/home/projects/www/vb-soft/datasets/beach_st_lenina/crop/data.yaml"
 
 # data = '/home/projects/www/vb-soft/datasets/hokkey/crop/data.yaml'
 # В data.yaml
@@ -22,11 +22,11 @@ data = "/home/projects/vb-soft/datasets/home/crop/data.yaml"
 model.train(
     data=data,
     imgsz=1024,
-    epochs=100,
-    batch=24,
+    epochs=50,
+    batch=12,
     lr0=1e-4,
     augment=True,  # false не сработало?
-    scale=0.2,
+    scale=0.25,
     box=12,  # усиленный вес для bbox loss
     cls=0.5,  # уменьшенный вес классификации
     hsv_h=0.0,  # 0.3
@@ -41,6 +41,6 @@ model.train(
     pretrained=True,
     rect=True,  # Прямоугольное обучение
     mosaic=0.0,  # Отключить мозаику, если кадры последовательны
-    #    resume=True,
+  #  resume=True,
 )
 

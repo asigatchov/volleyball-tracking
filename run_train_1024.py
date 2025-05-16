@@ -2,11 +2,11 @@ from ultralytics import YOLO
 
 # model = YOLO('yolo11.yaml')  # или 'yolov8s-seg' для сегментации
 #
-last_model = 'models/defaults/yolo11s.pt'
+last_model = 'models/defaults/yolo11n.pt'
 #last_model = "runs/detect/train7/weights/last.pt"
 model = YOLO(last_model)
 
-data = "/home/projects/vb-soft/datasets/home/crop/data.yaml"
+data = "/home/projects/www/vb-soft/datasets/gray3frame/crop/data.yaml"
 
 
 # data = '/home/projects/www/vb-soft/datasets/hokkey/crop/data.yaml'
