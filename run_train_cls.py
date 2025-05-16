@@ -1,12 +1,12 @@
 from ultralytics import YOLO
 
 # Load a model
-model = YOLO("yolo11n-cls.pt")  # load a pretrained model (recommended for training)
+model = YOLO("yolo11s-cls.pt")  # load a pretrained model (recommended for training)
 
 # Train the model
 results = model.train(
-        data="/home/projects/neuroweb/image-annotator/data/output/domain1_cls/",
-        batch   = 64,
+        data="/home/projects/neuroweb/image-annotator/data/output/domain1/",
+        batch   = 164,
         translate = 0.0,
         scale = 0,
         flipud = 0.5,

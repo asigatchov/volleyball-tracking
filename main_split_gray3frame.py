@@ -5,6 +5,9 @@ from helper import create_video_writer
 from collections import deque
 import time
 import argparse
+from src.ball_tracker import BallTracker
+
+
 
 
 # Добавление парсинга аргументов командной строки
@@ -22,15 +25,6 @@ args = parser.parse_args()
 
 video_file = args.video_file  # Получение пути к видеофайлу из аргументов командной строки
 file_model = args.model_primary_path  # Путь к модели
-
-def nearest(res, init):
-    box = res.xyxy.cpu().numpy().astype('int')
-    mean_c13 = np.mean(box[:, [0, 2]], axis=1)
-    mean_c24 = np.mean(box[:, [1, 3]], axis=1)
-    center = np.stack((mean_c13, mean_c24), axis=1).astype('int')
-    distances = np.linalg.norm(center - init, axis=1).astype('float')
-    return center[np.argmin(distances)], distances[np.argmin(distances)], np.argmin(distances)
-# model = YOLO("yolo-default/yolo11s.pt") # model name
 
 # file_model = "yolov10s.pt"
 model = YOLO(file_model) # model name
@@ -230,7 +224,11 @@ def create_detection_frame(queue):
     r = queue[0]
     g = queue[1]
     b = queue[2]
-    return cv2.merge((r,g, b))  # Объединяем каналы в один кадр
+    return cv2.merge((r,g,b))  # Объединяем каналы в один кадр
+
+tracker = BallTracker(buffer_size=15)
+
+
 
 while True:
     z += 1
@@ -256,10 +254,13 @@ while True:
     detected = False
     print("Detected objects:", detected_objects)
     # Обработка найденных объектов
+
+    detections = []
     for obj in detected_objects:
         x1, y1, x2, y2, conf = obj["x1"], obj["y1"], obj["x2"], obj["y2"], obj["confidence"]
         radius = int((x2 - x1) / 2) + 1
         center = (int((x1 + x2) / 2), int((y1 + y2) / 2), frame_num)
+        detections.append(center[:2])
         dicstance = 0
         dist_frame = 1
         if len(dq) > 0:
@@ -271,60 +272,88 @@ while True:
         cv2.circle(img, tuple(center[:2]), radius, (255, 0, 0), 2)
 
         cv2.putText(img, f'{conf:.2f} r: {radius}', (center[0] - 10, center[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+
+    
         if filter_false_detections(center, spam_list):
             continue  # Пропускаем неподвижные мячи
 
-        detected = True  # Устанавливаем флаг, если есть детекция
-        no_detection_count = 0  # Сбрасываем счетчик при детекции
+   
+    main_id, tracks = tracker.update(detections,frame_num  )
 
-        if dicstance < (30 * dist_frame):
-            # import pdb; pdb.set_trace()
-            dq.appendleft(center)  # Добавляем только детекции в dq
-            dq_predictions.appendleft(center)  # Добавляем детекции в dq_predictions
-            with open("ball.log", "a") as file:
-                file.write(f"{frame_num};{center[0]};{center[1]};{radius}\n")
-        else:
-            if len(dq) > 1:
-                dq.pop()
-
-        speed_x = 0
-        acceleration_x = 0
-        if len(dq) > 0:
-            prev_x, _, prev_frame = dq[0]
-            frame_diff = frame_num - prev_frame
-            if frame_diff > 0:
-                speed_x = (center[0] - prev_x) / frame_diff
-                if len(dq) > 1:
-                    prev_speed_x = (prev_x - dq[1][0]) / (prev_frame - dq[1][2])
-                    acceleration_x = (speed_x - prev_speed_x) / frame_diff
-
-        cv2.putText(img, f'speed_x: {speed_x:.2f}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-        cv2.putText(img, f'accel_x: {acceleration_x:.2f}', (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
-
-    if not detected:
-        no_detection_count += 1
-        if no_detection_count > 4:
-            print("No detection for 4 frames, stopping predictions.")
-        else:
-            if len(dq) > 0:
-                predicted_position = predict_position(dq)
-                if predicted_position:
-                    dq_predictions.appendleft((predicted_position[0], predicted_position[1], frame_num))  # Добавляем предсказания в dq_predictions
-                    cv2.circle(img, predicted_position, 10, (0, 255, 255), 2)
-                    cv2.putText(img, f'Predicted', (predicted_position[0] - 10, predicted_position[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-
-    # Визуализация очереди детекций (красным, ширина 5px)
-    for i in range(1, len(dq)):
-        if dq[i - 1] is None or dq[i] is None:
+    print('detection', detections, 'main_id:', main_id)
+    for track_id, track in tracks.items():
+        color = (255, 255, 0) if track_id == main_id else (0, 0, 255)
+        positions = list(track['positions'])
+        
+        if len(positions) < 3:
             continue
-        cv2.line(img, dq[i - 1][:2], dq[i][:2], (0, 0, 255), thickness=9)
-        cv2.putText(img, f'Ball: {dq[i][:2]}', (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
-    # Визуализация очереди детекций и предсказаний (желтым, ширина 9px)
-    for i in range(1, len(dq_predictions)):
-        if dq_predictions[i - 1] is None or dq_predictions[i] is None:
-            continue
-        cv2.line(img, dq_predictions[i - 1][:2], dq_predictions[i][:2], (0, 255, 255), thickness=5)
+        # Рисуем трек
+        for i in range(1, len(positions)):
+
+            cv2.line(img, 
+                    (int(positions[i-1][0][0]), int(positions[i-1][0][1])),
+                    (int(positions[i][0][0]), int(positions[i][0][1])),
+                    color, 2)
+            
+        # Рисуем текущую позицию
+        cv2.circle(img, 
+                  (int(positions[-1][0][0]), int(positions[-1][0][1])), 
+                  10, color, -1)
+
+
+    #     detected = True  # Устанавливаем флаг, если есть детекция
+    #     no_detection_count = 0  # Сбрасываем счетчик при детекции
+
+    #     if dicstance < (30 * dist_frame):
+    #         # import pdb; pdb.set_trace()
+    #         dq.appendleft(center)  # Добавляем только детекции в dq
+    #         dq_predictions.appendleft(center)  # Добавляем детекции в dq_predictions
+    #         with open("ball.log", "a") as file:
+    #             file.write(f"{frame_num};{center[0]};{center[1]};{radius}\n")
+    #     else:
+    #         if len(dq) > 1:
+    #             dq.pop()
+
+    #     speed_x = 0
+    #     acceleration_x = 0
+    #     if len(dq) > 0:
+    #         prev_x, _, prev_frame = dq[0]
+    #         frame_diff = frame_num - prev_frame
+    #         if frame_diff > 0:
+    #             speed_x = (center[0] - prev_x) / frame_diff
+    #             if len(dq) > 1:
+    #                 prev_speed_x = (prev_x - dq[1][0]) / (prev_frame - dq[1][2])
+    #                 acceleration_x = (speed_x - prev_speed_x) / frame_diff
+
+    #     cv2.putText(img, f'speed_x: {speed_x:.2f}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+    #     cv2.putText(img, f'accel_x: {acceleration_x:.2f}', (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
+
+    # if not detected:
+    #     no_detection_count += 1
+    #     if no_detection_count > 4:
+    #         print("No detection for 4 frames, stopping predictions.")
+    #     else:
+    #         if len(dq) > 0:
+    #             predicted_position = predict_position(dq)
+    #             if predicted_position:
+    #                 dq_predictions.appendleft((predicted_position[0], predicted_position[1], frame_num))  # Добавляем предсказания в dq_predictions
+    #                 cv2.circle(img, predicted_position, 10, (0, 255, 255), 2)
+    #                 cv2.putText(img, f'Predicted', (predicted_position[0] - 10, predicted_position[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+    # # Визуализация очереди детекций (красным, ширина 5px)
+    # for i in range(1, len(dq)):
+    #     if dq[i - 1] is None or dq[i] is None:
+    #         continue
+    #     cv2.line(img, dq[i - 1][:2], dq[i][:2], (0, 0, 255), thickness=9)
+    #     cv2.putText(img, f'Ball: {dq[i][:2]}', (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+
+    # # Визуализация очереди детекций и предсказаний (желтым, ширина 9px)
+    # for i in range(1, len(dq_predictions)):
+    #     if dq_predictions[i - 1] is None or dq_predictions[i] is None:
+    #         continue
+    #     cv2.line(img, dq_predictions[i - 1][:2], dq_predictions[i][:2], (0, 255, 255), thickness=5)
 
     writer.write(img)
     cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
