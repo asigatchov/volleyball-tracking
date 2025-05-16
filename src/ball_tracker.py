@@ -3,7 +3,7 @@ from collections import deque
 from scipy.spatial import distance
 
 class BallTracker:
-    def __init__(self, buffer_size=15, max_disappeared=5, max_distance=150):
+    def __init__(self, buffer_size=200, max_disappeared=30, max_distance=100):
         self.next_id = 0
         self.tracks = {}
         self.buffer_size = buffer_size
@@ -15,6 +15,7 @@ class BallTracker:
         for track_id in list(self.tracks.keys()):
             last_frame = self.tracks[track_id]['last_frame']
             if (frame_number - last_frame) > self.max_disappeared:
+                #import pdb; pdb.set_trace()
                 del self.tracks[track_id]
 
         # Сопоставление детекций с существующими треками
@@ -30,6 +31,7 @@ class BallTracker:
 
         # Жадное сопоставление по минимальному расстоянию
         matched_pairs = []
+        used_detection_indices = set()
         while True:
             if distance_matrix.size == 0 or np.all(np.isinf(distance_matrix)):
                 break
@@ -43,7 +45,8 @@ class BallTracker:
             det = unused_detections[j]
             
             self._update_track(track_id, det, frame_number)
-            matched_pairs.append((track_id, det))
+            matched_pairs.append((track_id, j))
+            used_detection_indices.add(j)
             
             # Заполняем использованные значения большими числами
             distance_matrix[i, :] = np.inf
@@ -51,8 +54,9 @@ class BallTracker:
 
         # Добавление несопоставленных детекций как новые треки
         for j, det in enumerate(unused_detections):
-            if all(j != pair[1] for pair in matched_pairs):
+            if j not in used_detection_indices:
                 self._add_track(det, frame_number)
+                # print('add new track', det)
 
         return self._get_main_ball()
 
@@ -73,11 +77,15 @@ class BallTracker:
         if len(self.tracks[track_id]['positions']) > 1:
             prev_pos, prev_frame = self.tracks[track_id]['positions'][-2]
             dt = frame_number - prev_frame
-            dx = (position[0] - prev_pos[0]) / dt
-            dy = (position[1] - prev_pos[1]) / dt
+            if dt == 0:
+                dx = 0
+                dy = 0
+            else:
+                dx = (position[0] - prev_pos[0]) / dt
+                dy = (position[1] - prev_pos[1]) / dt
             self.tracks[track_id]['prediction'] = [
-                position[0] + dx * (frame_number - prev_frame),
-                position[1] + dy * (frame_number - prev_frame)
+                position[0] + dx,
+                position[1] + dy
             ]
         else:
             self.tracks[track_id]['prediction'] = position

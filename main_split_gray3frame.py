@@ -288,7 +288,8 @@ while True:
         
         if len(positions) < 3:
             continue
-
+        print('detection', detections, 'main_id:', main_id)
+        print('track', track)
         # Рисуем трек
         for i in range(1, len(positions)):
 
@@ -298,8 +299,10 @@ while True:
                     color, 2)
             
         # Рисуем текущую позицию
+        x, y = int(positions[-1][0][0]), int(positions[-1][0][1])
+        cv2.putText(img, f'id: {track_id}', (x+25, y+25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
         cv2.circle(img, 
-                  (int(positions[-1][0][0]), int(positions[-1][0][1])), 
+                  (x,y), 
                   10, color, -1)
 
 
