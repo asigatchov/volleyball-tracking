@@ -157,10 +157,92 @@ def process_image_parts(img, model ,threshold=0.9):
 
     return detected_objects
 
+def calculate_iou(box1, box2):
+    """
+    Вычисляет IoU (Intersection over Union) между двумя боксами.
+    Каждый бокс представлен в виде словаря с ключами x1, y1, x2, y2.
+    """
+    # Координаты пересечения
+    x_left = max(box1["x1"], box2["x1"])
+    y_top = max(box1["y1"], box2["y1"])
+    x_right = min(box1["x2"], box2["x2"])
+    y_bottom = min(box1["y2"], box2["y2"])
+    
+    # Проверка на пересечение
+    if x_right < x_left or y_bottom < y_top:
+        return 0.0
+    
+    # Площадь пересечения
+    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+    
+    # Площади боксов
+    box1_area = (box1["x2"] - box1["x1"]) * (box1["y2"] - box1["y1"])
+    box2_area = (box2["x2"] - box2["x1"]) * (box2["y2"] - box2["y1"])
+    
+    # IoU
+    iou = intersection_area / float(box1_area + box2_area - intersection_area)
+    return iou
+
+def merge_overlapping_boxes(boxes, iou_threshold=0.3):
+    """
+    Объединяет перекрывающиеся боксы одного класса в один средний бокс.
+    
+    Args:
+        boxes: Список словарей с ключами x1, y1, x2, y2, confidence
+        iou_threshold: Порог IoU для определения перекрытия боксов
+        
+    Returns:
+        Список объединенных боксов
+    """
+    if not boxes:
+        return []
+    
+    # Сортируем боксы по уверенности (confidence) в порядке убывания
+    sorted_boxes = sorted(boxes, key=lambda x: x["confidence"], reverse=True)
+    merged_boxes = []
+    
+    while sorted_boxes:
+        # Берем бокс с наибольшей уверенностью
+        current_box = sorted_boxes.pop(0)
+        boxes_to_merge = [current_box]
+        i = 0
+        
+        # Находим все боксы, которые перекрываются с текущим
+        while i < len(sorted_boxes):
+            if calculate_iou(current_box, sorted_boxes[i]) > iou_threshold:
+                boxes_to_merge.append(sorted_boxes.pop(i))
+            else:
+                i += 1
+        
+        # Если нашли перекрывающиеся боксы, объединяем их
+        if len(boxes_to_merge) > 1:
+            # Вычисляем средние координаты и уверенность
+            sum_x1 = sum(box["x1"] for box in boxes_to_merge)
+            sum_y1 = sum(box["y1"] for box in boxes_to_merge)
+            sum_x2 = sum(box["x2"] for box in boxes_to_merge)
+            sum_y2 = sum(box["y2"] for box in boxes_to_merge)
+            sum_conf = sum(box["confidence"] for box in boxes_to_merge)
+            
+            count = len(boxes_to_merge)
+            merged_box = {
+                "x1": int(sum_x1 / count),
+                "y1": int(sum_y1 / count),
+                "x2": int(sum_x2 / count),
+                "y2": int(sum_y2 / count),
+                "confidence": sum_conf / count  # Средняя уверенность
+            }
+            merged_boxes.append(merged_box)
+        else:
+            # Если нет перекрывающихся боксов, добавляем текущий бокс как есть
+            merged_boxes.append(current_box)
+    
+    return merged_boxes
+
 def process_two_regions(img, model, threshold=0.6):
     """
     Обрабатывает два участка 1024x1024: один слева, другой справа, выравнивая их по краям.
     Возвращает результаты детекции в пространстве координат 1920x1080.
+    Объединяет перекрывающиеся боксы одного класса в один средний бокс.
     """
     height, width, _ = img.shape
 
@@ -209,8 +291,11 @@ def process_two_regions(img, model, threshold=0.6):
                     "y2": y2,
                     "confidence": conf
                 })
-
-    return detected_objects
+    
+    # Объединяем перекрывающиеся боксы одного класса
+    merged_objects = merge_overlapping_boxes(detected_objects, iou_threshold=0.3)
+    
+    return merged_objects
 
 frame_queue = deque(maxlen=3)  # Очередь для хранения трех последовательных кадров
 
@@ -274,18 +359,18 @@ while True:
         cv2.putText(img, f'{conf:.2f} r: {radius}', (center[0] - 10, center[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
 
-    
+
         if filter_false_detections(center, spam_list):
             continue  # Пропускаем неподвижные мячи
 
-   
-    main_id, tracks = tracker.update(detections,frame_num  )
 
-    print('detection', detections, 'main_id:', main_id)
+    main_id, tracks, deleted_tracks = tracker.update(detections,frame_num)
+
+    print('detection', detections, 'main_id:', main_id, deleted_tracks)
     for track_id, track in tracks.items():
         color = (255, 255, 0) if track_id == main_id else (0, 0, 255)
         positions = list(track['positions'])
-        
+
         if len(positions) < 3:
             continue
         print('detection', detections, 'main_id:', main_id)
@@ -293,16 +378,16 @@ while True:
         # Рисуем трек
         for i in range(1, len(positions)):
 
-            cv2.line(img, 
+            cv2.line(img,
                     (int(positions[i-1][0][0]), int(positions[i-1][0][1])),
                     (int(positions[i][0][0]), int(positions[i][0][1])),
                     color, 2)
-            
+
         # Рисуем текущую позицию
         x, y = int(positions[-1][0][0]), int(positions[-1][0][1])
         cv2.putText(img, f'id: {track_id}', (x+25, y+25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-        cv2.circle(img, 
-                  (x,y), 
+        cv2.circle(img,
+                  (x,y),
                   10, color, -1)
 
 
@@ -357,8 +442,8 @@ while True:
     #     if dq_predictions[i - 1] is None or dq_predictions[i] is None:
     #         continue
     #     cv2.line(img, dq_predictions[i - 1][:2], dq_predictions[i][:2], (0, 255, 255), thickness=5)
-
-    writer.write(img)
+    if main_id is not None:
+        writer.write(img)
     cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
     # cv2.resizeWindow("Image", 1280, 720)        # Устанавливаем размер окна 1280x720
     cv2.imshow("Image", img)

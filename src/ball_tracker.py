@@ -12,10 +12,11 @@ class BallTracker:
         
     def update(self, detections, frame_number):
         # Удаление треков, которые не обновлялись дольше max_disappeared кадров
+        deleted_tracks = []
         for track_id in list(self.tracks.keys()):
             last_frame = self.tracks[track_id]['last_frame']
             if (frame_number - last_frame) > self.max_disappeared:
-                #import pdb; pdb.set_trace()
+                deleted_tracks.append(track_id)
                 del self.tracks[track_id]
 
         # Сопоставление детекций с существующими треками
@@ -26,6 +27,7 @@ class BallTracker:
         distance_matrix = np.zeros((len(active_tracks), len(unused_detections)))
         for i, (track_id, track) in enumerate(active_tracks):
             last_pos, _ = track['positions'][-1]
+            last_pos = track['prediction']
             for j, det in enumerate(unused_detections):
                 distance_matrix[i, j] = distance.euclidean(last_pos, det)
 
@@ -58,7 +60,7 @@ class BallTracker:
                 self._add_track(det, frame_number)
                 # print('add new track', det)
 
-        return self._get_main_ball()
+        return  self._get_main_ball(deleted_tracks) 
 
     def _add_track(self, position, frame_number):
         self.tracks[self.next_id] = {
@@ -81,8 +83,8 @@ class BallTracker:
                 dx = 0
                 dy = 0
             else:
-                dx = (position[0] - prev_pos[0]) / dt
-                dy = (position[1] - prev_pos[1]) / dt
+                dx = int((position[0] - prev_pos[0]) / dt)
+                dy = int((position[1] - prev_pos[1]) / dt)
             self.tracks[track_id]['prediction'] = [
                 position[0] + dx,
                 position[1] + dy
@@ -90,7 +92,7 @@ class BallTracker:
         else:
             self.tracks[track_id]['prediction'] = position
 
-    def _get_main_ball(self):
+    def _get_main_ball(self, deleted_tracks):
         main_ball = None
         max_score = -1
         
@@ -122,4 +124,4 @@ class BallTracker:
                 max_score = total_score
                 main_ball = track_id
                 
-        return main_ball, self.tracks
+        return main_ball, self.tracks, deleted_tracks
