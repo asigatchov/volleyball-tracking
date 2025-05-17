@@ -5,7 +5,8 @@ from helper import create_video_writer
 from collections import deque
 import time
 import argparse
-from src.ball_tracker import BallTracker
+import json
+from src.ball_tracker import BallTracker, Track
 
 
 
@@ -25,7 +26,7 @@ args = parser.parse_args()
 
 video_file = args.video_file  # Получение пути к видеофайлу из аргументов командной строки
 file_model = args.model_primary_path  # Путь к модели
-
+file_tracks = '.'.join(video_file.split('.')[:-1]) + '.txt'
 # file_model = "yolov10s.pt"
 model = YOLO(file_model) # model name
 model.to('cuda')
@@ -311,7 +312,9 @@ def create_detection_frame(queue):
     b = queue[2]
     return cv2.merge((r,g,b))  # Объединяем каналы в один кадр
 
-tracker = BallTracker(buffer_size=15)
+# Создаем трекер с указанием реального диаметра мяча (21 см)
+# Переводим max_distance в см (100 пикселей ~ 100 см по умолчанию)
+tracker = BallTracker(buffer_size=1500, max_distance=100, ball_diameter_cm=21)
 
 
 
@@ -343,9 +346,15 @@ while True:
     detections = []
     for obj in detected_objects:
         x1, y1, x2, y2, conf = obj["x1"], obj["y1"], obj["x2"], obj["y2"], obj["confidence"]
-        radius = int((x2 - x1) / 2) + 1
-        center = (int((x1 + x2) / 2), int((y1 + y2) / 2), frame_num)
-        detections.append(center[:2])
+        ball_diameter = max(x2 - x1, y2 - y1)  # Диаметр мяча в пикселях
+        radius = int(ball_diameter / 2)
+        center = (int((x1 + x2) / 2), int((y1 + y2) / 2))
+        detection_info = {
+            'position': center,
+            'frame': frame_num,
+            'ball_size': ball_diameter
+        }
+        detections.append(detection_info)
         dicstance = 0
         dist_frame = 1
         if len(dq) > 0:
@@ -366,15 +375,19 @@ while True:
 
     main_id, tracks, deleted_tracks = tracker.update(detections,frame_num)
 
-    print('detection', detections, 'main_id:', main_id, deleted_tracks)
-    for track_id, track in tracks.items():
-        color = (255, 255, 0) if track_id == main_id else (0, 0, 255)
-        positions = list(track['positions'])
+    if len(deleted_tracks) > 0:
+        with open(file_tracks, 'a') as f:
+            for track in deleted_tracks:
+                f.write(json.dumps(track.to_dict()) + '\n')
+
+    for track_id, track_data in tracks.items():
+        color = (255, 255, 0) if int(track_id) == main_id else (0, 0, 255)
+        positions = list(track_data['positions'])
 
         if len(positions) < 3:
             continue
         print('detection', detections, 'main_id:', main_id)
-        print('track', track)
+        print('track', track_data)
         # Рисуем трек
         for i in range(1, len(positions)):
 
@@ -389,6 +402,15 @@ while True:
         cv2.circle(img,
                   (x,y),
                   10, color, -1)
+        
+        # Сохраняем состояние трекера в JSON-файл каждые 100 кадров
+        if frame_num % 100 == 0:
+            try:
+                with open(f"tracker_state_{frame_num}.json", "w") as f:
+                    f.write(tracker.to_json())
+                print(f"Saved tracker state to tracker_state_{frame_num}.json")
+            except Exception as e:
+                print(f"Error saving tracker state: {e}")
 
 
     #     detected = True  # Устанавливаем флаг, если есть детекция
