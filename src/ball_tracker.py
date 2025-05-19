@@ -8,22 +8,21 @@ import dataclasses
 
 @dataclass
 class Track:
-    positions: deque = field(default_factory=lambda: deque(maxlen=1500))
-    prediction: List[float] = field(default_factory=list)
+    positions: deque = field(default_factory=lambda: deque(maxlen=1500))  # [(x,y,z,frame_number), ...]
+    prediction: List[float] = field(default_factory=list)  # [x,y,z] in cm
     last_frame: int = 0
     start_frame: int = 0
-    ball_size: float = 0  # Размер мяча в пикселях (диаметр)
-    real_positions: deque = field(default_factory=lambda: deque(maxlen=1500))  # Позиции в реальных координатах (см)
-    
+    ball_sizes: deque = field(default_factory=lambda: deque(maxlen=1500))  # Диаметр мяча в пикселях для каждого кадра
+    track_id: int =0 
     def to_dict(self) -> Dict[str, Any]:
         """Convert Track to dictionary for JSON serialization"""
         return {
             'positions': list(self.positions),
-            'real_positions': list(self.real_positions),
             'prediction': self.prediction,
             'last_frame': self.last_frame,
             'start_frame': self.start_frame,
-            'ball_size': self.ball_size
+            'ball_sizes': list(self.ball_sizes),
+            'track_id': self.track_id
         }
     
     @classmethod
@@ -31,40 +30,69 @@ class Track:
         """Create Track from dictionary"""
         track = cls()
         track.positions = deque(data['positions'], maxlen=buffer_size)
-        if 'real_positions' in data:
-            track.real_positions = deque(data['real_positions'], maxlen=buffer_size)
         track.prediction = data['prediction']
         track.last_frame = data['last_frame']
         track.start_frame = data['start_frame']
-        if 'ball_size' in data:
-            track.ball_size = data['ball_size']
+        track.ball_sizes = deque(data.get('ball_sizes', []), maxlen=buffer_size)
+        track.track_id = data.get('track_id', 0)
         return track
 
 class BallTracker:
-    def __init__(self, buffer_size=1500, max_disappeared=15, max_distance=100, ball_diameter_cm=21):
+    def __init__(self, buffer_size=1500, max_disappeared=30, max_distance=100, ball_diameter_cm=21.0):
+        """Initialize ball tracker with real-world coordinates support.
+        
+        Args:
+            buffer_size: Maximum number of positions to store per track
+            max_disappeared: Maximum number of frames a track can disappear before being deleted
+            max_distance: Maximum distance (in pixels) for track matching
+            ball_diameter_cm: Real diameter of the ball in centimeters (default: 21.0 for volleyball)
+        """
         self.next_id = 0
         self.tracks: Dict[int, Track] = {}
         self.buffer_size = buffer_size
         self.max_disappeared = max_disappeared
-        self.max_distance = max_distance  # в пикселях
-        self.max_distance_cm = max_distance  # в сантиметрах
-        self.ball_diameter_cm = ball_diameter_cm  # диаметр мяча в см
+        self.max_distance = max_distance
+        self.ball_diameter_cm = ball_diameter_cm
         
-    def pixels_to_cm(self, pixels, ball_size):
-        """Преобразование пикселей в сантиметры на основе размера мяча"""
-        if ball_size <= 0:
-            return pixels  # Если размер мяча неизвестен, возвращаем исходное значение
-        scale = self.ball_diameter_cm / ball_size  # см/пиксель
-        return pixels * scale
+    def calculate_depth(self, ball_size_px):
+        """Calculate depth (Z coordinate) based on ball size in pixels.
+        Uses the principle that apparent size is inversely proportional to distance.
         
-    def calculate_real_position(self, position, ball_size):
-        """Рассчитывает реальные координаты в см на основе размера мяча"""
-        if ball_size <= 0:
-            return position  # Если размер мяча неизвестен, возвращаем исходное положение
-        scale = self.ball_diameter_cm / ball_size  # см/пиксель
-        return (position[0] * scale, position[1] * scale)
+        Args:
+            ball_size_px: Diameter of the ball in pixels
+        Returns:
+            depth_cm: Estimated depth in centimeters
+        """
+        # Используем простую модель перспективной проекции
+        # Z = (F * D) / P, где
+        # F - фокусное расстояние (условно принимаем за 1000)
+        # D - реальный диаметр мяча
+        # P - размер мяча в пикселях
+        F = 1000  # условное фокусное расстояние
+        return (F * self.ball_diameter_cm) / ball_size_px
+    
+    def box_to_position(self, box):
+        """Convert YOLO bounding box to ball position and size.
+        
+        Args:
+            box: Dictionary with keys 'x1', 'y1', 'x2', 'y2'
+        Returns:
+            tuple: (center_x, center_y, ball_diameter)
+        """
+        x1, y1, x2, y2 = box['x1'], box['y1'], box['x2'], box['y2']
+        center_x = (x1 + x2) / 2
+        center_y = (y1 + y2) / 2
+        diameter = max(x2 - x1, y2 - y1)  # используем максимальный размер как диаметр
+        return center_x, center_y, diameter
+        self.ball_diameter = ball_diameter
         
     def update(self, detections, frame_number):
+        """Update tracks with new detections.
+        
+        Args:
+            detections: List of dictionaries with keys 'x1', 'y1', 'x2', 'y2', 'confidence', 'cls_id'
+            frame_number: Current frame number
+        """
         # Удаление треков, которые не обновлялись дольше max_disappeared кадров
         deleted_tracks = []
         for track_id in list(self.tracks.keys()):
@@ -77,23 +105,18 @@ class BallTracker:
         active_tracks = list(self.tracks.items())
         unused_detections = list(detections)
         
-        # Проверяем формат детекций - старый или новый
-        is_new_format = len(unused_detections) > 0 and isinstance(unused_detections[0], dict) and 'position' in unused_detections[0]
-        
         # Матрица расстояний между всеми треками и детекциями
         distance_matrix = np.zeros((len(active_tracks), len(unused_detections)))
         for i, (track_id, track) in enumerate(active_tracks):
             if len(track.positions) > 0:
-                last_pos, _ = track.positions[-1]
+                last_pos = track.positions[-1][0:3]  # x,y,z
                 last_pos = track.prediction
                 for j, det in enumerate(unused_detections):
-                    if is_new_format:
-                        # Новый формат с информацией о размере мяча
-                        det_pos = det['position']
-                        distance_matrix[i, j] = distance.euclidean(last_pos, det_pos)
-                    else:
-                        # Старый формат - просто координаты
-                        distance_matrix[i, j] = distance.euclidean(last_pos, det)
+                    # Конвертируем бокс в позицию
+                    center_x, center_y, diameter = self.box_to_position(det)
+                    depth = self.calculate_depth(diameter)
+                    det_pos = [center_x, center_y, depth]
+                    distance_matrix[i, j] = distance.euclidean(last_pos[0:2], det_pos[0:2])  # сравниваем только x,y
 
         # Жадное сопоставление по минимальному расстоянию
         matched_pairs = []
@@ -110,12 +133,7 @@ class BallTracker:
             track_id, _ = active_tracks[i]
             det = unused_detections[j]
             
-            if is_new_format:
-                # Новый формат с информацией о размере мяча
-                self._update_track(track_id, det['position'], frame_number, det['ball_size'])
-            else:
-                # Старый формат - просто координаты
-                self._update_track(track_id, det, frame_number)
+            self._update_track(track_id, det, frame_number)
             matched_pairs.append((track_id, j))
             used_detection_indices.add(j)
             
@@ -126,57 +144,52 @@ class BallTracker:
         # Добавление несопоставленных детекций как новые треки
         for j, det in enumerate(unused_detections):
             if j not in used_detection_indices:
-                if is_new_format:
-                    # Новый формат с информацией о размере мяча
-                    self._add_track(det['position'], frame_number, det['ball_size'])
-                else:
-                    # Старый формат - просто координаты
-                    self._add_track(det, frame_number)
+                self._add_track(det, frame_number)
                 # print('add new track', det)
 
         return  self._get_main_ball(deleted_tracks) 
 
-    def _add_track(self, position, frame_number, ball_size=0):
+    def _add_track(self, detection, frame_number):
         track = Track()
+        track.track_id = self.next_id
+        # Конвертируем бокс в 3D позицию
+        center_x, center_y, diameter = self.box_to_position(detection)
+        depth = self.calculate_depth(diameter)
+        position = [center_x, center_y, depth]
+        
         track.positions = deque([(position, frame_number)], maxlen=self.buffer_size)
-        track.ball_size = ball_size
-        
-        # Рассчитываем реальные координаты в см
-        real_position = self.calculate_real_position(position, ball_size)
-        track.real_positions = deque([(real_position, frame_number)], maxlen=self.buffer_size)
-        
         track.prediction = position
         track.last_frame = frame_number
         track.start_frame = frame_number
+        track.ball_sizes = deque([diameter], maxlen=self.buffer_size)
         
         self.tracks[self.next_id] = track
         self.next_id += 1
 
-    def _update_track(self, track_id, position, frame_number, ball_size=None):
+    def _update_track(self, track_id, detection, frame_number):
+        # Конвертируем бокс в 3D позицию
+        center_x, center_y, diameter = self.box_to_position(detection)
+        depth = self.calculate_depth(diameter)
+        position = [center_x, center_y, depth]
+        
         self.tracks[track_id].positions.append((position, frame_number))
         self.tracks[track_id].last_frame = frame_number
-        
-        # Обновляем размер мяча, если он предоставлен
-        if ball_size is not None and ball_size > 0:
-            self.tracks[track_id].ball_size = ball_size
-        
-        # Рассчитываем реальные координаты в см
-        real_position = self.calculate_real_position(position, self.tracks[track_id].ball_size)
-        self.tracks[track_id].real_positions.append((real_position, frame_number))
+        self.tracks[track_id].ball_sizes.append(diameter)
         
         # Обновление предсказания с учетом временного интервала
         if len(self.tracks[track_id].positions) > 1:
             prev_pos, prev_frame = self.tracks[track_id].positions[-2]
             dt = frame_number - prev_frame
             if dt == 0:
-                dx = 0
-                dy = 0
+                dx = dy = dz = 0
             else:
-                dx = int((position[0] - prev_pos[0]) / dt)
-                dy = int((position[1] - prev_pos[1]) / dt)
+                dx = (position[0] - prev_pos[0]) / dt
+                dy = (position[1] - prev_pos[1]) / dt
+                dz = (position[2] - prev_pos[2]) / dt
             self.tracks[track_id].prediction = [
                 position[0] + dx,
-                position[1] + dy
+                position[1] + dy,
+                position[2] + dz
             ]
         else:
             self.tracks[track_id].prediction = position

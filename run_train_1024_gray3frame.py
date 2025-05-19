@@ -4,10 +4,10 @@ from ultralytics import YOLO
 #
 last_model = "models/defaults/yolo11n.pt"
 last_model = "models/asigatchov/yolo11n_gray3frame_ball_1024_e100_5k.pt"
-last_model = 'runs/detect/train3/weights/best.pt'
+#last_model = 'runs/detect/train5/weights/last.pt'
 model = YOLO(last_model)
 
-data = "/home/projects/www/vb-soft/datasets/beach_st_lenina/crop/data.yaml"
+data = "/home/projects/www/vb-soft/datasets/tanshmash/crop/data.yaml"
 
 # data = '/home/projects/www/vb-soft/datasets/hokkey/crop/data.yaml'
 # В data.yaml

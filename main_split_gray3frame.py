@@ -7,6 +7,7 @@ import time
 import argparse
 import json
 from src.ball_tracker import BallTracker, Track
+import os
 
 
 
@@ -27,6 +28,9 @@ args = parser.parse_args()
 video_file = args.video_file  # Получение пути к видеофайлу из аргументов командной строки
 file_model = args.model_primary_path  # Путь к модели
 file_tracks = '.'.join(video_file.split('.')[:-1]) + '.txt'
+if os.path.exists(file_tracks):
+    os.remove(file_tracks)
+
 # file_model = "yolov10s.pt"
 model = YOLO(file_model) # model name
 model.to('cuda')
@@ -36,7 +40,7 @@ cap = cv2.VideoCapture(video_file) # file name
 
 writer = create_video_writer(cap, "Output6.mp4")  # output file name
 
-
+fps = int(cap.get(cv2.CAP_PROP_FPS))
 def calc_distance(current_point, previous_point, current_frame, previous_frame):
     """
     Проверяет, находится ли расстояние между текущей и предыдущей точкой в пределах допустимого,
@@ -98,65 +102,7 @@ def preprocess_frame(frame):
     frame = cv2.GaussianBlur(frame, (3, 3), 0)
     return frame
 
-def process_image_parts(img, model ,threshold=0.9):
-    """
-    Разделяет изображение на 6 частей, обрабатывает их моделью и возвращает найденные объекты
-    с пересчитанными координатами для полного изображения.
-    """
-    height, width, _ = img.shape
-    part_height = height // 2
-    part_width = width // 3
 
-    sub_images = [
-        img[0:part_height, 0:part_width],  # Верхний левый
-        img[0:part_height, part_width:2*part_width],  # Верхний средний
-        img[0:part_height, 2*part_width:width],  # Верхний правый
-        img[part_height:height, 0:part_width],  # Нижний левый
-        img[part_height:height, part_width:2*part_width],  # Нижний средний
-        img[part_height:height, 2*part_width:width],  # Нижний правый
-    ]
-
-    # Рисуем черные линии для визуализации разделения
-    for i in range(1, 3):  # Вертикальные линии
-        cv2.line(img, (i * part_width, 0), (i * part_width, height), (0, 0, 0), 2)
-    for i in range(1, 2):  # Горизонтальная линия
-        cv2.line(img, (0, i * part_height), (width, i * part_height), (0, 0, 0), 2)
-
-    # Обработка частей батчем
-    results = model(sub_images, stream=True)
-
-    # Объединение результатов обратно в один кадр
-    detected_objects = []
-    for idx, r in enumerate(results):
-        boxes = r.boxes
-        y_offset = 0 if idx < 3 else part_height
-        x_offset = (idx % 3) * part_width
-
-        boxes = [_b for _b in boxes if _b.cls[0].cpu().numpy().astype('int') == 0]
-
-        for box in boxes:
-            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype('int')
-
-            if abs((2 - x1) * (y2 - y1)) < 100:
-                continue
-
-            conf = box.conf[0].cpu().numpy()
-            if conf > threshold:
-                # Смещение координат обратно в общий кадр
-                x1 += x_offset
-                x2 += x_offset
-                y1 += y_offset
-                y2 += y_offset
-
-                detected_objects.append({
-                    "x1": x1,
-                    "y1": y1,
-                    "x2": x2,
-                    "y2": y2,
-                    "confidence": conf
-                })
-
-    return detected_objects
 
 def calculate_iou(box1, box2):
     """
@@ -239,7 +185,13 @@ def merge_overlapping_boxes(boxes, iou_threshold=0.3):
     
     return merged_boxes
 
-def process_two_regions(img, model, threshold=0.6):
+def save_detections_json4frame(frame_num, detections):
+    json_dir = "jsons/"
+    os.makedirs(json_dir, exist_ok=True)
+    with open(os.path.join(json_dir, f"frame_{frame_num}.json"), "w") as f:
+        json.dump(detections, f)
+
+def process_two_regions(img, model, threshold=0.6 ):
     """
     Обрабатывает два участка 1024x1024: один слева, другой справа, выравнивая их по краям.
     Возвращает результаты детекции в пространстве координат 1920x1080.
@@ -272,7 +224,7 @@ def process_two_regions(img, model, threshold=0.6):
         x_offset = 0 if idx == 0 else width - region_size  # Смещение: 0 для левого региона, width - region_size для правого
         y_offset = vertical_offset
 
-        boxes = [_b for _b in boxes if _b.cls[0].cpu().numpy().astype('int') == 0]
+        #boxes = [_b for _b in boxes if _b.cls[0].cpu().numpy().astype('int') == 0]
 
         for box in boxes:
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype('int')
@@ -286,15 +238,16 @@ def process_two_regions(img, model, threshold=0.6):
                 y2 += y_offset
 
                 detected_objects.append({
-                    "x1": x1,
-                    "y1": y1,
-                    "x2": x2,
-                    "y2": y2,
-                    "confidence": conf
+                    'cls_id':0,
+                    "x1": int(x1),
+                    "y1": int(y1),
+                    "x2": int(x2),
+                    "y2": int(y2),
+                    "confidence": float(conf)
                 })
     
     # Объединяем перекрывающиеся боксы одного класса
-    merged_objects = merge_overlapping_boxes(detected_objects, iou_threshold=0.3)
+    merged_objects = merge_overlapping_boxes(detected_objects, iou_threshold=0.1)
     
     return merged_objects
 
@@ -312,9 +265,7 @@ def create_detection_frame(queue):
     b = queue[2]
     return cv2.merge((r,g,b))  # Объединяем каналы в один кадр
 
-# Создаем трекер с указанием реального диаметра мяча (21 см)
-# Переводим max_distance в см (100 пикселей ~ 100 см по умолчанию)
-tracker = BallTracker(buffer_size=1500, max_distance=100, ball_diameter_cm=21)
+tracker = BallTracker(buffer_size=1500)
 
 
 
@@ -326,6 +277,9 @@ while True:
         break
 
     frame_num += 1
+
+    # if frame_num % 2 == 0:
+    #     continue
 
     # Преобразуем кадр в grayscale и добавляем в очередь
     gray_frame = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -342,19 +296,16 @@ while True:
     detected = False
     print("Detected objects:", detected_objects)
     # Обработка найденных объектов
+    save_detections_json4frame(frame_num, detected_objects)
+    
+    cv2.putText(img, f'frame: {frame_num:09d}', (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 1)
 
     detections = []
     for obj in detected_objects:
         x1, y1, x2, y2, conf = obj["x1"], obj["y1"], obj["x2"], obj["y2"], obj["confidence"]
-        ball_diameter = max(x2 - x1, y2 - y1)  # Диаметр мяча в пикселях
-        radius = int(ball_diameter / 2)
-        center = (int((x1 + x2) / 2), int((y1 + y2) / 2))
-        detection_info = {
-            'position': center,
-            'frame': frame_num,
-            'ball_size': ball_diameter
-        }
-        detections.append(detection_info)
+        radius = int((x2 - x1) / 2) + 1
+        center = (int((x1 + x2) / 2), int((y1 + y2) / 2), frame_num)
+        detections.append(center[:2])
         dicstance = 0
         dist_frame = 1
         if len(dq) > 0:
@@ -366,14 +317,15 @@ while True:
         cv2.circle(img, tuple(center[:2]), radius, (255, 0, 0), 2)
 
         cv2.putText(img, f'{conf:.2f} r: {radius}', (center[0] - 10, center[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-
+       
 
 
         if filter_false_detections(center, spam_list):
             continue  # Пропускаем неподвижные мячи
 
 
-    main_id, tracks, deleted_tracks = tracker.update(detections,frame_num)
+    main_id, tracks, deleted_tracks = tracker.update(detected_objects,frame_num)
+
 
     if len(deleted_tracks) > 0:
         with open(file_tracks, 'a') as f:
@@ -398,7 +350,10 @@ while True:
 
         # Рисуем текущую позицию
         x, y = int(positions[-1][0][0]), int(positions[-1][0][1])
-        cv2.putText(img, f'id: {track_id}', (x+25, y+25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+        
+        f_diff = track_data['last_frame'] - track_data['start_frame']
+        t_time = f_diff / fps
+        cv2.putText(img, f'id: {track_id}: {t_time:.2f} {f_diff}', (x+25, y+25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
         cv2.circle(img,
                   (x,y),
                   10, color, -1)
@@ -412,58 +367,6 @@ while True:
             except Exception as e:
                 print(f"Error saving tracker state: {e}")
 
-
-    #     detected = True  # Устанавливаем флаг, если есть детекция
-    #     no_detection_count = 0  # Сбрасываем счетчик при детекции
-
-    #     if dicstance < (30 * dist_frame):
-    #         # import pdb; pdb.set_trace()
-    #         dq.appendleft(center)  # Добавляем только детекции в dq
-    #         dq_predictions.appendleft(center)  # Добавляем детекции в dq_predictions
-    #         with open("ball.log", "a") as file:
-    #             file.write(f"{frame_num};{center[0]};{center[1]};{radius}\n")
-    #     else:
-    #         if len(dq) > 1:
-    #             dq.pop()
-
-    #     speed_x = 0
-    #     acceleration_x = 0
-    #     if len(dq) > 0:
-    #         prev_x, _, prev_frame = dq[0]
-    #         frame_diff = frame_num - prev_frame
-    #         if frame_diff > 0:
-    #             speed_x = (center[0] - prev_x) / frame_diff
-    #             if len(dq) > 1:
-    #                 prev_speed_x = (prev_x - dq[1][0]) / (prev_frame - dq[1][2])
-    #                 acceleration_x = (speed_x - prev_speed_x) / frame_diff
-
-    #     cv2.putText(img, f'speed_x: {speed_x:.2f}', (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-    #     cv2.putText(img, f'accel_x: {acceleration_x:.2f}', (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
-
-    # if not detected:
-    #     no_detection_count += 1
-    #     if no_detection_count > 4:
-    #         print("No detection for 4 frames, stopping predictions.")
-    #     else:
-    #         if len(dq) > 0:
-    #             predicted_position = predict_position(dq)
-    #             if predicted_position:
-    #                 dq_predictions.appendleft((predicted_position[0], predicted_position[1], frame_num))  # Добавляем предсказания в dq_predictions
-    #                 cv2.circle(img, predicted_position, 10, (0, 255, 255), 2)
-    #                 cv2.putText(img, f'Predicted', (predicted_position[0] - 10, predicted_position[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-
-    # # Визуализация очереди детекций (красным, ширина 5px)
-    # for i in range(1, len(dq)):
-    #     if dq[i - 1] is None or dq[i] is None:
-    #         continue
-    #     cv2.line(img, dq[i - 1][:2], dq[i][:2], (0, 0, 255), thickness=9)
-    #     cv2.putText(img, f'Ball: {dq[i][:2]}', (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-
-    # # Визуализация очереди детекций и предсказаний (желтым, ширина 9px)
-    # for i in range(1, len(dq_predictions)):
-    #     if dq_predictions[i - 1] is None or dq_predictions[i] is None:
-    #         continue
-    #     cv2.line(img, dq_predictions[i - 1][:2], dq_predictions[i][:2], (0, 255, 255), thickness=5)
     if main_id is not None:
         writer.write(img)
     cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
