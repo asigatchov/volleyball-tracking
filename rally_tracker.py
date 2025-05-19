@@ -4,7 +4,11 @@ import numpy as np
 from collections import defaultdict
 import math
 import argparse
+import os
 
+def ensure_reels_dir():
+    if not os.path.exists('reels'):
+        os.makedirs('reels')
 def load_tracks(log_file):
     tracks = []
     with open(log_file, 'r') as f:
@@ -83,7 +87,7 @@ def load_to_dataframe(data, touch_threshold=0.5):
     
     return df
 
-def calculate_velocities(pos1, pos2, frame_diff, fps=30):
+def calculate_velocities(pos1, pos2, frame_diff, fps=60):
     """Calculate velocities for each axis.
     Returns:
         tuple: (vx, vy, vz) velocities in pixels/second
@@ -144,7 +148,7 @@ def filter_valid_tracks(tracks, min_speed=10, max_track_length=300, fps=30):
         track_length = track['last_frame'] - track['start_frame']
         
         # Skip long tracks (likely spare balls)
-        if track_length < 10:
+        if track_length < fps / 1.2:
             print("bad", track_length, track['start_frame'], '-', track['last_frame'])
             continue
 
@@ -169,10 +173,10 @@ def filter_valid_tracks(tracks, min_speed=10, max_track_length=300, fps=30):
         else:
             status = 'rolling' if rolling else 'slow'
             print("BAD", avg_speed, track['start_frame'], '-', track['last_frame'], status)
-    
+   
     return valid_tracks
 
-def merge_tracks(tracks, max_gap_seconds=4, fps=60):
+def merge_tracks(tracks, max_gap_seconds=1, fps=60):
     max_gap_frames = max_gap_seconds * fps
     merged_tracks = []
     tracks = sorted(tracks, key=lambda x: x['start_frame'])
@@ -192,6 +196,77 @@ def merge_tracks(tracks, max_gap_seconds=4, fps=60):
     
     merged_tracks.append(current_track)
     return merged_tracks
+
+def crop_and_save_track(video_file, track, output_path):
+    """
+    video_file: путь к исходному видео
+    track: словарь с ключами 'positions' (список (x, y, frame)), 'start_frame', 'last_frame'
+    output_path: путь для сохранения результата
+    crop_width: ширина crop (например 540)
+    crop_height: если None, используется вся высота видео
+    """
+    cap = cv2.VideoCapture(video_file)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    ret, frame = cap.read()
+    if not ret:
+        cap.release()
+        return
+    crop_height = frame.shape[0]
+
+    aspect_ratio = 9 / 16
+    crop_width = int(crop_height * aspect_ratio)
+
+
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (crop_width, crop_height))
+
+    # Создаём словарь frame->(x, y) для быстрого доступа
+    frame_to_pos = {int(pos[2]): (float(pos[0]), float(pos[1])) for pos in track['positions']}
+    all_frames = sorted(frame_to_pos.keys())
+    start_frame = track['start_frame']
+    end_frame = track['last_frame']
+
+    for frame_idx in range(start_frame, end_frame + 1):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Усреднение положения мяча за последние 5 детекций
+        recent_frames = [f for f in all_frames if f <= frame_idx]
+        last_n_frames = recent_frames[-5:] if len(recent_frames) >= 1 else []
+        if last_n_frames:
+            xs = [frame_to_pos[f][0] for f in last_n_frames]
+            x_center = int(np.mean(xs))
+        else:
+            x_center = frame.shape[1] // 2
+
+        # Центр crop по X — усреднённая позиция мяча, по Y — по центру кадра (но crop всегда по всей высоте)
+        y_center = frame.shape[0] // 2  # не используется, crop по всей высоте
+
+        # Координаты crop
+        x1 = max(0, x_center - crop_width // 2)
+        x2 = x1 + crop_width
+        if x2 > frame.shape[1]:
+            x2 = frame.shape[1]
+            x1 = x2 - crop_width
+        y1 = 0
+        y2 = y1 + crop_height
+        if y2 > frame.shape[0]:
+            y2 = frame.shape[0]
+            y1 = 0
+
+        # Crop и запись
+        crop_frame = frame[y1:y2, x1:x2]
+        cv2.imshow(f"Video: {video_file}", crop_frame)
+        key = cv2.waitKey(25) & 0xFF
+        if key == ord('q'):
+            break
+        out.write(crop_frame)
+
+    cap.release()
+    out.release()
 
 def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=None, skip_no_track=True):
     """
@@ -249,7 +324,7 @@ def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=Non
                 cv2.putText(frame, f"Track: {track_num} ({track['start_frame']}-{track['last_frame']})", 
                            (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 10)
-            # Draw detection if detect_json_dir is set
+            # Draw detection if detect_json_dir is not set
             if detect_json_dir is not None:
                 import os
                 json_path = os.path.join(detect_json_dir, f"frame_{current_frame}.json")
@@ -288,7 +363,7 @@ def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=Non
     # Original behavior: show only frames with tracks
     for i, track in enumerate(sorted_tracks):
         start_frame = max(0, track['start_frame'] - preview_frames)
-        end_frame = track['last_frame'] + preview_frames
+        end_frame = track['last_frame'] - preview_frames
         print(f"\nТрек {i+1}: кадры {track['start_frame']}-{track['last_frame']}")
         print(f"Показываю кадры {start_frame}-{end_frame}")
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
@@ -377,7 +452,12 @@ def main():
     merged_tracks = merge_tracks(valid_tracks)
     valid_tracks_array = [{'start_frame': t['start_frame'], 'last_frame': t['last_frame']} for t in merged_tracks]
     print('merged_tracks', valid_tracks_array)
-    show_track_frames(video_file, merged_tracks, preview_seconds=0, detect_json_dir=detect_json_dir, skip_no_track=skip_no_track)
+#    show_track_frames(video_file, merged_tracks, preview_seconds=0, detect_json_dir=detect_json_dir, skip_no_track=skip_no_track)
+    ensure_reels_dir()
+    for i, track in enumerate(merged_tracks):
+        output_path = f"reels/reels_track_{i+1:06d}.mp4"
+        crop_and_save_track(video_file, track, output_path)
+        print(f"Saved: {output_path}")
 
 if __name__ == "__main__":
     main()
