@@ -41,6 +41,53 @@ cap = cv2.VideoCapture(video_file) # file name
 writer = create_video_writer(cap, "Output6.mp4")  # output file name
 
 fps = int(cap.get(cv2.CAP_PROP_FPS))
+
+def mark_net_line_and_save(cap, config_filename="vbnet.cnf"):
+    """
+    Показывает первый кадр, позволяет пользователю кликать по точкам сетки,
+    сохраняет координаты в файл config_filename.
+    """
+    ret, frame = cap.read()
+    if not ret:
+        print("Не удалось прочитать первый кадр видео.")
+        return
+    points = []
+    temp_frame = frame.copy()
+
+    def click_event(event, x, y, flags, param):
+        nonlocal frame, points, temp_frame
+        if event == cv2.EVENT_LBUTTONDOWN:
+            points.append((x, y))
+            cv2.circle(temp_frame, (x, y), 5, (0, 255, 0), -1)
+            cv2.imshow("Mark Net Line", temp_frame)
+        elif event == cv2.EVENT_RBUTTONDOWN:
+            # Завершить разметку по правому клику
+            cv2.destroyWindow("Mark Net Line")
+
+    cv2.namedWindow("Mark Net Line", cv2.WINDOW_NORMAL)
+    cv2.imshow("Mark Net Line", frame)
+    cv2.setMouseCallback("Mark Net Line", click_event)
+
+    print("Кликните левой кнопкой мыши по точкам сетки. Завершите разметку правым кликом.")
+    while True:
+        key = cv2.waitKey(1) & 0xFF
+        if cv2.getWindowProperty("Mark Net Line", cv2.WND_PROP_VISIBLE) < 1:
+            break
+        if key == 13 or key == 10:  # Enter
+            break
+    cv2.destroyWindow("Mark Net Line")
+    if points:
+        with open(config_filename, "w") as f:
+            json.dump(points, f)
+        print(f"Координаты сетки сохранены в {config_filename}: {points}")
+    else:
+        print("Точки сетки не были выбраны.")
+    # После разметки сбросить cap на начало
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+# --- Вызов разметки сетки перед основным циклом ---
+mark_net_line_and_save(cap)
+
 def calc_distance(current_point, previous_point, current_frame, previous_frame):
     """
     Проверяет, находится ли расстояние между текущей и предыдущей точкой в пределах допустимого,
@@ -312,7 +359,6 @@ while True:
             dist_frame = abs(dq[0][2] - center[2])
             dicstance = calc_distance(dq[0][:2], center[:2], dq[0][2], center[2])  # Pass frame numbers
         # time.sleep(0.1)
-        cv2.putText(img, f'dist: {dicstance:.3f}', (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
         cv2.circle(img, tuple(center[:2]), radius, (255, 0, 0), 2)
 
@@ -358,14 +404,14 @@ while True:
                   (x,y),
                   10, color, -1)
         
-        # Сохраняем состояние трекера в JSON-файл каждые 100 кадров
-        if frame_num % 100 == 0:
-            try:
-                with open(f"tracker_state_{frame_num}.json", "w") as f:
-                    f.write(tracker.to_json())
-                print(f"Saved tracker state to tracker_state_{frame_num}.json")
-            except Exception as e:
-                print(f"Error saving tracker state: {e}")
+        # # Сохраняем состояние трекера в JSON-файл каждые 100 кадров
+        # if frame_num % 100 == 0:
+        #     try:
+        #         with open(f"tracker_state_{frame_num}.json", "w") as f:
+        #             f.write(tracker.to_json())
+        #         print(f"Saved tracker state to tracker_state_{frame_num}.json")
+        #     except Exception as e:
+        #         print(f"Error saving tracker state: {e}")
 
     if main_id is not None:
         writer.write(img)
