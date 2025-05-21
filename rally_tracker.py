@@ -143,9 +143,11 @@ def is_rolling(positions, frames, fps=30, window_size=5, min_y_velocity=30):
 
 def filter_valid_tracks(tracks, min_speed=10, max_track_length=300, fps=30):
     valid_tracks = []
+  
+
     for track in tracks:
         frames = [p[2] for p in track['positions']]
-        positions = [(p[0], p[1], 0) for p in track['positions']]  # z=0 for now
+        positions = [(p[0], p[1], int(p[2])) for p in track['positions']]  # z=0 for now
         track_length = track['last_frame'] - track['start_frame']
         
         # Skip long tracks (likely spare balls)
@@ -175,6 +177,8 @@ def filter_valid_tracks(tracks, min_speed=10, max_track_length=300, fps=30):
             status = 'rolling' if rolling else 'slow'
             print("BAD", avg_speed, track['start_frame'], '-', track['last_frame'], status)
    
+
+
     return valid_tracks
 
 def merge_tracks(tracks, max_gap_seconds=1, fps=60):
@@ -197,7 +201,6 @@ def merge_tracks(tracks, max_gap_seconds=1, fps=60):
     
     merged_tracks.append(current_track)
     return merged_tracks
-
 def crop_and_save_track(video_file, track, output_path):
     """
     video_file: путь к исходному видео
@@ -431,7 +434,59 @@ def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=Non
     cv2.destroyAllWindows()
 
 
-    
+def cut_track(track, fps=30):
+    """
+    Обрезает трек с конца: ищет последний момент, когда мяч был выше сетки,
+    и оставляет только точки до этого момента + 1 секунда (fps кадров).
+    """
+    net_y = None
+    try:
+        with open("vbnet.cnf", "r") as f:
+            net_coords = json.loads(f.read())
+            net_y = (net_coords[0][1] + net_coords[1][1]) / 2
+    except Exception as e:
+        print("Не удалось загрузить vbnet.cnf:", e)
+        return track  # если не удалось загрузить сетку, не обрезаем
+
+    positions = track['positions']
+    if not positions or net_y is None:
+        return track
+
+    # Реверсируем трек для поиска с конца
+    reversed_positions = positions[::-1]
+    idx_above_net = None
+    for idx, pos in enumerate(reversed_positions):
+        y = pos[1]
+        if y < net_y:
+            idx_above_net = idx
+            break
+
+    if idx_above_net is None:
+        # Мяч ни разу не был выше сетки — не обрезаем
+        return {}
+
+    # Отступаем на 1 секунду (fps кадров) от найденного момента
+    cut_idx = idx_above_net + fps
+    if cut_idx > len(reversed_positions):
+        cut_idx = len(reversed_positions)
+
+    # Формируем новые позиции (оставляем только нужные)
+    new_positions = reversed_positions[cut_idx:][::-1]
+    if not new_positions:
+        new_positions = [positions[0]]  # хотя бы одна точка
+
+    # Обновляем last_frame и ball_sizes
+    new_last_frame = new_positions[-1][2]
+    if 'ball_sizes' in track and len(track['ball_sizes']) == len(positions):
+        new_ball_sizes = track['ball_sizes'][:len(new_positions)]
+    else:
+        new_ball_sizes = track.get('ball_sizes', [])
+
+    track['positions'] = new_positions
+    track['last_frame'] = new_last_frame
+    track['ball_sizes'] = new_ball_sizes
+    return track
+
 def main():
     # Load and process tracks
     parser = argparse.ArgumentParser(description="Process a video file.")
@@ -446,8 +501,12 @@ def main():
     detect_json_dir = args.detect_json_dir
     skip_no_track = args.skip_no_track
 
-    #object_detector = cv2.createBackgroundSubtractorMOG2()
 
+    cap = cv2.VideoCapture(video_file)
+    import math 
+    fps =  math.ceil(cap.get(cv2.CAP_PROP_FPS))
+
+    #object_detector = cv2.createBackgroundSubtractorMOG2()
     tracks = load_tracks(file_log)
     valid_tracks = filter_valid_tracks(tracks)
     tracks_array = [{'start_frame': t['start_frame'], 'last_frame': t['last_frame']} for t in tracks]
@@ -455,11 +514,14 @@ def main():
     valid_tracks_array = [{'start_frame': t['start_frame'], 'last_frame': t['last_frame']} for t in valid_tracks]
     print('valid_tracks', valid_tracks_array)
     merged_tracks = merge_tracks(valid_tracks)
+    
     valid_tracks_array = [{'start_frame': t['start_frame'], 'last_frame': t['last_frame']} for t in merged_tracks]
+ 
     print('merged_tracks', valid_tracks_array)
 #    show_track_frames(video_file, merged_tracks, preview_seconds=0, detect_json_dir=detect_json_dir, skip_no_track=skip_no_track)
     ensure_reels_dir()
     for i, track in enumerate(merged_tracks):
+        track = cut_track(track, fps=fps)
         output_path = f"reels/reels_track_{i+1:06d}.mp4"
         crop_and_save_track(video_file, track, output_path)
         print(f"Saved: {output_path}")
