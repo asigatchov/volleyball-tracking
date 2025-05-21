@@ -9,6 +9,7 @@ import os
 def ensure_reels_dir():
     if not os.path.exists('reels'):
         os.makedirs('reels')
+
 def load_tracks(log_file):
     tracks = []
     with open(log_file, 'r') as f:
@@ -429,6 +430,8 @@ def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=Non
     cap.release()
     cv2.destroyAllWindows()
 
+
+    
 def main():
     # Load and process tracks
     parser = argparse.ArgumentParser(description="Process a video file.")
@@ -442,6 +445,8 @@ def main():
     video_file = args.video_file 
     detect_json_dir = args.detect_json_dir
     skip_no_track = args.skip_no_track
+
+    #object_detector = cv2.createBackgroundSubtractorMOG2()
 
     tracks = load_tracks(file_log)
     valid_tracks = filter_valid_tracks(tracks)
