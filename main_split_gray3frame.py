@@ -84,9 +84,10 @@ def mark_net_line_and_save(cap, config_filename="vbnet.cnf"):
         print("Точки сетки не были выбраны.")
     # После разметки сбросить cap на начало
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    return points
 
 # --- Вызов разметки сетки перед основным циклом ---
-mark_net_line_and_save(cap)
+points = mark_net_line_and_save(cap)
 
 def calc_distance(current_point, previous_point, current_frame, previous_frame):
     """
@@ -161,18 +162,18 @@ def calculate_iou(box1, box2):
     y_top = max(box1["y1"], box2["y1"])
     x_right = min(box1["x2"], box2["x2"])
     y_bottom = min(box1["y2"], box2["y2"])
-    
+
     # Проверка на пересечение
     if x_right < x_left or y_bottom < y_top:
         return 0.0
-    
+
     # Площадь пересечения
     intersection_area = (x_right - x_left) * (y_bottom - y_top)
-    
+
     # Площади боксов
     box1_area = (box1["x2"] - box1["x1"]) * (box1["y2"] - box1["y1"])
     box2_area = (box2["x2"] - box2["x1"]) * (box2["y2"] - box2["y1"])
-    
+
     # IoU
     iou = intersection_area / float(box1_area + box2_area - intersection_area)
     return iou
@@ -180,34 +181,34 @@ def calculate_iou(box1, box2):
 def merge_overlapping_boxes(boxes, iou_threshold=0.3):
     """
     Объединяет перекрывающиеся боксы одного класса в один средний бокс.
-    
+
     Args:
         boxes: Список словарей с ключами x1, y1, x2, y2, confidence
         iou_threshold: Порог IoU для определения перекрытия боксов
-        
+
     Returns:
         Список объединенных боксов
     """
     if not boxes:
         return []
-    
+
     # Сортируем боксы по уверенности (confidence) в порядке убывания
     sorted_boxes = sorted(boxes, key=lambda x: x["confidence"], reverse=True)
     merged_boxes = []
-    
+
     while sorted_boxes:
         # Берем бокс с наибольшей уверенностью
         current_box = sorted_boxes.pop(0)
         boxes_to_merge = [current_box]
         i = 0
-        
+
         # Находим все боксы, которые перекрываются с текущим
         while i < len(sorted_boxes):
             if calculate_iou(current_box, sorted_boxes[i]) > iou_threshold:
                 boxes_to_merge.append(sorted_boxes.pop(i))
             else:
                 i += 1
-        
+
         # Если нашли перекрывающиеся боксы, объединяем их
         if len(boxes_to_merge) > 1:
             # Вычисляем средние координаты и уверенность
@@ -216,7 +217,7 @@ def merge_overlapping_boxes(boxes, iou_threshold=0.3):
             sum_x2 = sum(box["x2"] for box in boxes_to_merge)
             sum_y2 = sum(box["y2"] for box in boxes_to_merge)
             sum_conf = sum(box["confidence"] for box in boxes_to_merge)
-            
+
             count = len(boxes_to_merge)
             merged_box = {
                 "x1": int(sum_x1 / count),
@@ -229,7 +230,7 @@ def merge_overlapping_boxes(boxes, iou_threshold=0.3):
         else:
             # Если нет перекрывающихся боксов, добавляем текущий бокс как есть
             merged_boxes.append(current_box)
-    
+
     return merged_boxes
 
 def save_detections_json4frame(frame_num, detections):
@@ -292,10 +293,10 @@ def process_two_regions(img, model, threshold=0.6 ):
                     "y2": int(y2),
                     "confidence": float(conf)
                 })
-    
+
     # Объединяем перекрывающиеся боксы одного класса
     merged_objects = merge_overlapping_boxes(detected_objects, iou_threshold=0.1)
-    
+
     return merged_objects
 
 frame_queue = deque(maxlen=3)  # Очередь для хранения трех последовательных кадров
@@ -325,12 +326,13 @@ while True:
 
     frame_num += 1
 
-    # if frame_num % 2 == 0:
-    #     continue
 
     # Преобразуем кадр в grayscale и добавляем в очередь
     gray_frame = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     frame_queue.append(gray_frame)
+    if frame_num % 2 == 0:
+        continue
+
 
     # Создаем новый кадр для детекции
     detection_frame = create_detection_frame(frame_queue)
@@ -344,7 +346,7 @@ while True:
     print("Detected objects:", detected_objects)
     # Обработка найденных объектов
     save_detections_json4frame(frame_num, detected_objects)
-    
+
     cv2.putText(img, f'frame: {frame_num:09d}', (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 1)
 
     detections = []
@@ -353,17 +355,11 @@ while True:
         radius = int((x2 - x1) / 2) + 1
         center = (int((x1 + x2) / 2), int((y1 + y2) / 2), frame_num)
         detections.append(center[:2])
-        dicstance = 0
-        dist_frame = 1
-        if len(dq) > 0:
-            dist_frame = abs(dq[0][2] - center[2])
-            dicstance = calc_distance(dq[0][:2], center[:2], dq[0][2], center[2])  # Pass frame numbers
-        # time.sleep(0.1)
 
         cv2.circle(img, tuple(center[:2]), radius, (255, 0, 0), 2)
 
         cv2.putText(img, f'{conf:.2f} r: {radius}', (center[0] - 10, center[1] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-       
+
 
 
         if filter_false_detections(center, spam_list):
@@ -396,14 +392,14 @@ while True:
 
         # Рисуем текущую позицию
         x, y = int(positions[-1][0][0]), int(positions[-1][0][1])
-        
+
         f_diff = track_data['last_frame'] - track_data['start_frame']
         t_time = f_diff / fps
         cv2.putText(img, f'id: {track_id}: {t_time:.2f} {f_diff}', (x+25, y+25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
         cv2.circle(img,
                   (x,y),
                   10, color, -1)
-        
+
         # # Сохраняем состояние трекера в JSON-файл каждые 100 кадров
         # if frame_num % 100 == 0:
         #     try:

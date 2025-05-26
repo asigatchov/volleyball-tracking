@@ -4,10 +4,10 @@ from ultralytics import YOLO
 #
 last_model = "models/defaults/yolo11n.pt"
 last_model = "models/asigatchov/yolo11n_gray3frame_ball_1024_e100_5k.pt"
-#last_model = 'runs/detect/train5/weights/last.pt'
+last_model = 'runs/detect/train14/weights/last.pt'
 model = YOLO(last_model)
 
-data = "/home/projects/www/vb-soft/datasets/tanshmash/crop/data.yaml"
+data = "/home/projects/www/vb-soft/datasets/transmash_with_action/crop/data.yaml"
 
 # data = '/home/projects/www/vb-soft/datasets/hokkey/crop/data.yaml'
 # В data.yaml
@@ -41,6 +41,7 @@ model.train(
     pretrained=True,
     rect=True,  # Прямоугольное обучение
     mosaic=0.0,  # Отключить мозаику, если кадры последовательны
-  #  resume=True,
+    # resume=True,
+    #
 )
 

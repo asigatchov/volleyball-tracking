@@ -143,7 +143,22 @@ def is_rolling(positions, frames, fps=30, window_size=5, min_y_velocity=30):
 
 def filter_valid_tracks(tracks, min_speed=10, max_track_length=300, fps=30):
     valid_tracks = []
-  
+    
+    # Загружаем координаты сетки из vbnet.cnf
+    net_x_bounds = None
+    net_y = None
+    try:
+        with open("vbnet.cnf", "r") as f:
+            net_coords = json.loads(f.read())
+            # Получаем x-координаты сетки (антенн)
+            left_x = net_coords[0][0]    # x-координата левой границы сетки
+            right_x = net_coords[1][0]   # x-координата правой границы сетки
+            net_x_bounds = (left_x, right_x)
+            # Вычисляем y-координату сетки (высота)
+            net_y = (net_coords[0][1] + net_coords[1][1]) / 2
+    except Exception as e:
+        print("Не удалось загрузить vbnet.cnf:", e)
+        # Если не удалось загрузить координаты сетки, продолжаем без проверки
 
     for track in tracks:
         frames = [p[2] for p in track['positions']]
@@ -169,15 +184,39 @@ def filter_valid_tracks(tracks, min_speed=10, max_track_length=300, fps=30):
         # Check if ball is rolling
         rolling = False # = is_rolling(positions, frames, fps)
         
-        # Keep tracks with sufficient speed and not rolling
+        # Проверяем, проходил ли мяч между антеннами сетки
+        passed_through_net = False
+        rose_above_net = False
+        
+        if net_x_bounds is not None and net_y is not None:
+            left_x, right_x = net_x_bounds
+            
+            for pos in track['positions']:
+                x, y = pos[0], pos[1]
+                
+                # Проверяем, прошел ли мяч между антеннами
+                if left_x <= x <= right_x:
+                    passed_through_net = True
+                
+                # Проверяем, поднимался ли мяч выше сетки
+                if y < net_y:  # в системе координат OpenCV ось Y направлена вниз
+                    rose_above_net = True
+            
+            if not passed_through_net:
+                print(f"REJECTED: Track {track['start_frame']}-{track['last_frame']} did not pass between antennas ({left_x}, {right_x})")
+                continue
+                
+            if not rose_above_net:
+                print(f"REJECTED: Track {track['start_frame']}-{track['last_frame']} never rose above net height ({net_y})")
+                continue
+        
+        # Keep tracks with sufficient speed, not rolling, and passing through net
         if avg_speed > min_speed and not rolling:
             print("OK", avg_speed, track['start_frame'], '-', track['last_frame'], 'not rolling')
             valid_tracks.append(track)
         else:
             status = 'rolling' if rolling else 'slow'
             print("BAD", avg_speed, track['start_frame'], '-', track['last_frame'], status)
-   
-
 
     return valid_tracks
 
@@ -437,7 +476,7 @@ def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=Non
 def cut_track(track, fps=30):
     """
     Обрезает трек с конца: ищет последний момент, когда мяч был выше сетки,
-    и оставляет только точки до этого момента + 1 секунда (fps кадров).
+    и оставляет только точки до этого момента + 1.5 секунды (fps*1.5 кадров).
     """
     net_y = None
     try:
@@ -463,10 +502,10 @@ def cut_track(track, fps=30):
 
     if idx_above_net is None:
         # Мяч ни разу не был выше сетки — не обрезаем
-        return {}
+        return track
 
-    # Отступаем на 1 секунду (fps кадров) от найденного момента
-    cut_idx = idx_above_net + fps
+    # Отступаем на 1.5 секунды (fps*1.5 кадров) от найденного момента
+    cut_idx = idx_above_net + int(fps * 1.5)
     if cut_idx > len(reversed_positions):
         cut_idx = len(reversed_positions)
 
@@ -510,18 +549,15 @@ def main():
     tracks = load_tracks(file_log)
     valid_tracks = filter_valid_tracks(tracks)
     tracks_array = [{'start_frame': t['start_frame'], 'last_frame': t['last_frame']} for t in tracks]
-    print('tracks', tracks_array)
     valid_tracks_array = [{'start_frame': t['start_frame'], 'last_frame': t['last_frame']} for t in valid_tracks]
-    print('valid_tracks', valid_tracks_array)
     merged_tracks = merge_tracks(valid_tracks)
     
     valid_tracks_array = [{'start_frame': t['start_frame'], 'last_frame': t['last_frame']} for t in merged_tracks]
  
-    print('merged_tracks', valid_tracks_array)
 #    show_track_frames(video_file, merged_tracks, preview_seconds=0, detect_json_dir=detect_json_dir, skip_no_track=skip_no_track)
     ensure_reels_dir()
     for i, track in enumerate(merged_tracks):
-        track = cut_track(track, fps=fps)
+        #track = cut_track(track, fps=fps)
         output_path = f"reels/reels_track_{i+1:06d}.mp4"
         crop_and_save_track(video_file, track, output_path)
         print(f"Saved: {output_path}")
