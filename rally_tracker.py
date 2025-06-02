@@ -32,60 +32,60 @@ def load_to_dataframe(data, touch_threshold=0.5):
             'y': pos[0][1],
             'frame': pos[1]
         })
-    
+
     df = pd.DataFrame(positions_data).sort_values('frame')
-    
+
     # Вычисляем производные движения
     df['v_x'] = df['x'].diff() / df['frame'].diff()
     df['v_y'] = df['y'].diff() / df['frame'].diff()
     df['v_xy'] = np.sqrt(df['v_x']**2 + df['v_y']**2)
-    
+
     df['a_x'] = df['v_x'].diff() / df['frame'].diff()
     df['a_y'] = df['v_y'].diff() / df['frame'].diff()
     df['a_xy'] = np.sqrt(df['a_x']**2 + df['a_y']**2)
-    
+
     df['angle'] = np.degrees(np.arctan2(df['v_y'], df['v_x'])) % 360
     df['angular_velocity'] = df['angle'].diff() / df['frame'].diff()
-    
+
     # Детекция касаний
     df['acceleration_change'] = df['a_xy'].abs()
     df['angle_change'] = abs(df['angular_velocity'])
-    
+
     # Комбинированный показатель изменения траектории
     df['trajectory_change'] = (
-        df['acceleration_change'] / df['acceleration_change'].mean() + 
+        df['acceleration_change'] / df['acceleration_change'].mean() +
         df['angle_change'] / df['angle_change'].mean()
     )
-    
+
     # Определяем кадры с касаниями
     df['is_touch'] = False
     if len(df) > 1:
         mean_change = df['trajectory_change'].mean()
         std_change = df['trajectory_change'].std()
         threshold = mean_change + touch_threshold * std_change
-        
+
         # Находим кадры с аномальными изменениями траектории
         touch_frames = df[df['trajectory_change'] > threshold]['frame']
         df.loc[df['frame'].isin(touch_frames), 'is_touch'] = True
-    
+
     if 'prediction' in data:
         prediction = data['prediction']
         prediction_frame = df['frame'].max() + 1
         last_row = df.iloc[-1]
-        
+
         pred_df = pd.DataFrame([{
             'x': prediction[0],
             'y': prediction[1],
             'frame': prediction_frame,
             'is_prediction': True,
             'is_touch': False,
-            **{k: last_row[k] for k in ['v_x', 'v_y', 'v_xy', 
+            **{k: last_row[k] for k in ['v_x', 'v_y', 'v_xy',
                                        'a_x', 'a_y', 'a_xy',
                                        'angle', 'angular_velocity']}
         }])
-        
+
         df = pd.concat([df, pred_df], ignore_index=True)
-    
+
     return df
 
 def calculate_velocities(pos1, pos2, frame_diff, fps=60):
@@ -97,11 +97,11 @@ def calculate_velocities(pos1, pos2, frame_diff, fps=60):
     time = frame_diff / fps
     if time <= 0:
         return (0, 0, 0)
-    
+
     vx = (pos2[0] - pos1[0]) / time
     vy = (pos2[1] - pos1[1]) / time
     vz = 0  # Ignore z for now
-    
+
     return (vx, vy, vz)
 
 def calculate_speed(pos1, pos2, frame_diff, fps=30):
@@ -111,20 +111,20 @@ def calculate_speed(pos1, pos2, frame_diff, fps=30):
 
 def is_rolling(positions, frames, fps=30, window_size=5, min_y_velocity=30):
     """Determine if the ball is rolling based on vertical velocity.
-    
+
     Args:
         positions: List of (x,y,z) positions
         frames: List of frame numbers
         fps: Frames per second
         window_size: Number of frames to analyze
         min_y_velocity: Minimum absolute Y velocity to consider ball not rolling
-        
+
     Returns:
         bool: True if the ball appears to be rolling
     """
     if len(positions) < window_size + 1:
         return False
-        
+
     # Calculate Y velocities for the window
     y_velocities = []
     for i in range(1, len(positions)):
@@ -133,17 +133,17 @@ def is_rolling(positions, frames, fps=30, window_size=5, min_y_velocity=30):
         frame_diff = frames[i] - frames[i-1]
         _, vy, _ = calculate_velocities(pos1, pos2, frame_diff, fps)
         y_velocities.append(abs(vy))
-    
+
     # Use the last window_size velocities
     recent_velocities = y_velocities[-window_size:]
     avg_y_velocity = np.mean(recent_velocities)
-    
+
     # If vertical movement is very small, consider it rolling
     return avg_y_velocity < min_y_velocity
 
 def filter_valid_tracks(tracks, min_speed=10, max_track_length=300, fps=30):
     valid_tracks = []
-    
+
     # Загружаем координаты сетки из vbnet.cnf
     net_x_bounds = None
     net_y = None
@@ -164,7 +164,7 @@ def filter_valid_tracks(tracks, min_speed=10, max_track_length=300, fps=30):
         frames = [p[2] for p in track['positions']]
         positions = [(p[0], p[1], int(p[2])) for p in track['positions']]  # z=0 for now
         track_length = track['last_frame'] - track['start_frame']
-        
+
         # Skip long tracks (likely spare balls)
         if track_length < fps / 1.2:
             print("bad", track_length, track['start_frame'], '-', track['last_frame'])
@@ -178,38 +178,38 @@ def filter_valid_tracks(tracks, min_speed=10, max_track_length=300, fps=30):
             frame_diff = pos2[2] - pos1[2]
             speed = calculate_speed(pos1, pos2, frame_diff, fps)
             speeds.append(speed)
-        
+
         avg_speed = np.mean(speeds) if speeds else 0
-        
+
         # Check if ball is rolling
         rolling = False # = is_rolling(positions, frames, fps)
-        
+
         # Проверяем, проходил ли мяч между антеннами сетки
         passed_through_net = False
         rose_above_net = False
-        
-        if net_x_bounds is not None and net_y is not None:
-            left_x, right_x = net_x_bounds
-            
-            for pos in track['positions']:
-                x, y = pos[0], pos[1]
-                
-                # Проверяем, прошел ли мяч между антеннами
-                if left_x <= x <= right_x:
-                    passed_through_net = True
-                
-                # Проверяем, поднимался ли мяч выше сетки
-                if y < net_y:  # в системе координат OpenCV ось Y направлена вниз
-                    rose_above_net = True
-            
-            if not passed_through_net:
-                print(f"REJECTED: Track {track['start_frame']}-{track['last_frame']} did not pass between antennas ({left_x}, {right_x})")
-                continue
-                
-            if not rose_above_net:
-                print(f"REJECTED: Track {track['start_frame']}-{track['last_frame']} never rose above net height ({net_y})")
-                continue
-        
+
+        # if net_x_bounds is not None and net_y is not None:
+        #     left_x, right_x = net_x_bounds
+
+        #     for pos in track['positions']:
+        #         x, y = pos[0], pos[1]
+
+        #         # Проверяем, прошел ли мяч между антеннами
+        #         if left_x <= x <= right_x:
+        #             passed_through_net = True
+
+        #         # Проверяем, поднимался ли мяч выше сетки
+        #         if y < net_y:  # в системе координат OpenCV ось Y направлена вниз
+        #             rose_above_net = True
+
+        #     if not passed_through_net:
+        #         print(f"REJECTED: Track {track['start_frame']}-{track['last_frame']} did not pass between antennas ({left_x}, {right_x})")
+        #         continue
+
+        #     if not rose_above_net:
+        #         print(f"REJECTED: Track {track['start_frame']}-{track['last_frame']} never rose above net height ({net_y})")
+        #         continue
+
         # Keep tracks with sufficient speed, not rolling, and passing through net
         if avg_speed > min_speed and not rolling:
             print("OK", avg_speed, track['start_frame'], '-', track['last_frame'], 'not rolling')
@@ -224,7 +224,7 @@ def merge_tracks(tracks, max_gap_seconds=1, fps=60):
     max_gap_frames = max_gap_seconds * fps
     merged_tracks = []
     tracks = sorted(tracks, key=lambda x: x['start_frame'])
-    
+
     current_track = tracks[0]
     for next_track in tracks[1:]:
         gap = next_track['start_frame'] - current_track['last_frame']
@@ -237,7 +237,7 @@ def merge_tracks(tracks, max_gap_seconds=1, fps=60):
             # End of rally, add to merged tracks
             merged_tracks.append(current_track)
             current_track = next_track
-    
+
     merged_tracks.append(current_track)
     return merged_tracks
 def crop_and_save_track(video_file, track, output_path):
@@ -255,37 +255,59 @@ def crop_and_save_track(video_file, track, output_path):
         cap.release()
         return
     crop_height = frame.shape[0]
-
     aspect_ratio = 9 / 16
     crop_width = int(crop_height * aspect_ratio)
-
-
-
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (crop_width, crop_height))
 
-    # Создаём словарь frame->(x, y) для быстрого доступа
+    # frame_to_pos: frame -> (x, y)
     frame_to_pos = {int(pos[2]): (float(pos[0]), float(pos[1])) for pos in track['positions']}
     all_frames = sorted(frame_to_pos.keys())
     start_frame = track['start_frame']
     end_frame = track['last_frame']
 
+    # Для плавности: строим массив x_center для каждого кадра с интерполяцией
+    x_centers = []
     for frame_idx in range(start_frame, end_frame + 1):
+        if frame_idx in frame_to_pos:
+            x_centers.append((frame_idx, frame_to_pos[frame_idx][0]))
+        else:
+            # Интерполяция по ближайшим известным позициям
+            prev_frames = [f for f in all_frames if f < frame_idx]
+            next_frames = [f for f in all_frames if f > frame_idx]
+            if prev_frames and next_frames:
+                f0 = prev_frames[-1]
+                f1 = next_frames[0]
+                x0 = frame_to_pos[f0][0]
+                x1 = frame_to_pos[f1][0]
+                # Линейная интерполяция
+                x_interp = x0 + (x1 - x0) * (frame_idx - f0) / (f1 - f0)
+                x_centers.append((frame_idx, x_interp))
+            elif prev_frames:
+                x_centers.append((frame_idx, frame_to_pos[prev_frames[-1]][0]))
+            elif next_frames:
+                x_centers.append((frame_idx, frame_to_pos[next_frames[0]][0]))
+            else:
+                x_centers.append((frame_idx, frame.shape[1] // 2))
+
+    # Сглаживание (скользящее среднее по x)
+    x_values = np.array([x for _, x in x_centers])
+    window = 7
+    if len(x_values) >= window:
+        x_smooth = np.convolve(x_values, np.ones(window)/window, mode='same')
+    else:
+        x_smooth = x_values
+
+    for idx, frame_idx in enumerate(range(start_frame, end_frame + 1)):
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
         if not ret:
             break
 
-        # Усреднение положения мяча за последние 5 детекций
-        recent_frames = [f for f in all_frames if f <= frame_idx]
-        last_n_frames = recent_frames[-5:] if len(recent_frames) >= 1 else []
-        if last_n_frames:
-            xs = [frame_to_pos[f][0] for f in last_n_frames]
-            x_center = int(np.mean(xs))
-        else:
-            x_center = frame.shape[1] // 2
+        # Плавный центр crop по X
+        x_center = int(x_smooth[idx]) if idx < len(x_smooth) else frame.shape[1] // 2
 
-        # Центр crop по X — усреднённая позиция мяча, по Y — по центру кадра (но crop всегда по всей высоте)
+        # Центр crop по Y — по центру кадра (но crop всегда по всей высоте)
         y_center = frame.shape[0] // 2  # не используется, crop по всей высоте
 
         # Координаты crop
@@ -314,7 +336,7 @@ def crop_and_save_track(video_file, track, output_path):
 def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=None, skip_no_track=True):
     """
     Отображает кадры из видео, соответствующие трекам.
-    
+
     Args:
         video_file (str): Путь к видеофайлу
         tracks (list): Список словарей с ключами 'start_frame' и 'last_frame'
@@ -325,20 +347,20 @@ def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=Non
     if not cap.isOpened():
         print(f"Ошибка: Не удалось открыть видеофайл {video_file}")
         return
-    
+
     # Получаем FPS видео
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
         print("Ошибка: Не удалось определить FPS видео")
         cap.release()
         return
-    
+
     # Конвертируем секунды в кадры
     preview_frames = int(preview_seconds * fps)
-    
+
     # Сортируем треки по начальному кадру
     sorted_tracks = sorted(tracks, key=lambda x: x['start_frame'])
-    
+
     # Проходим по всем трекам
     # If skip_no_track is False, we show all frames in the video, overlaying track info if present.
     # If True, we show only frames with tracks (the original behavior, but now can be toggled).
@@ -361,10 +383,10 @@ def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=Non
                     track_num = i + 1
                     break
             # Overlay frame and track info
-            cv2.putText(frame, f"Frame: {current_frame}", (10, 30), 
+            cv2.putText(frame, f"Frame: {current_frame}", (10, 30),
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             if in_track:
-                cv2.putText(frame, f"Track: {track_num} ({track['start_frame']}-{track['last_frame']})", 
+                cv2.putText(frame, f"Track: {track_num} ({track['start_frame']}-{track['last_frame']})",
                            (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 10)
             # Draw detection if detect_json_dir is not set
@@ -416,9 +438,9 @@ def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=Non
             if not ret:
                 break
             # Overlay frame and track info
-            cv2.putText(frame, f"Frame: {current_frame}", (10, 30), 
+            cv2.putText(frame, f"Frame: {current_frame}", (10, 30),
                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-            cv2.putText(frame, f"Track: {i+1} ({track['start_frame']}-{track['last_frame']})", 
+            cv2.putText(frame, f"Track: {i+1} ({track['start_frame']}-{track['last_frame']})",
                        (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             if track['start_frame'] <= current_frame <= track['last_frame']:
                 cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 10)
@@ -467,7 +489,7 @@ def show_track_frames(video_file, tracks, preview_seconds=1, detect_json_dir=Non
                     cv2.destroyAllWindows()
                     return
                 break
-    
+
     # Освобождаем ресурсы
     cap.release()
     cv2.destroyAllWindows()
@@ -535,30 +557,32 @@ def main():
     parser.add_argument("--skip_no_track", type=lambda x: (str(x).lower() == 'true'), default=True, help="If True, only show frames with tracks. If False, show all frames.")
     args = parser.parse_args()
 
-    file_log = args.file_log 
-    video_file = args.video_file 
+    file_log = args.file_log
+    video_file = args.video_file
     detect_json_dir = args.detect_json_dir
     skip_no_track = args.skip_no_track
 
-
     cap = cv2.VideoCapture(video_file)
-    import math 
+    import math
     fps =  math.ceil(cap.get(cv2.CAP_PROP_FPS))
 
-    #object_detector = cv2.createBackgroundSubtractorMOG2()
+    # object_detector = cv2.createBackgroundSubtractorMOG2()
     tracks = load_tracks(file_log)
     valid_tracks = filter_valid_tracks(tracks)
     tracks_array = [{'start_frame': t['start_frame'], 'last_frame': t['last_frame']} for t in tracks]
     valid_tracks_array = [{'start_frame': t['start_frame'], 'last_frame': t['last_frame']} for t in valid_tracks]
     merged_tracks = merge_tracks(valid_tracks)
-    
+
     valid_tracks_array = [{'start_frame': t['start_frame'], 'last_frame': t['last_frame']} for t in merged_tracks]
- 
-#    show_track_frames(video_file, merged_tracks, preview_seconds=0, detect_json_dir=detect_json_dir, skip_no_track=skip_no_track)
+
+    #    show_track_frames(video_file, merged_tracks, preview_seconds=0, detect_json_dir=detect_json_dir, skip_no_track=skip_no_track)
     ensure_reels_dir()
     for i, track in enumerate(merged_tracks):
-        #track = cut_track(track, fps=fps)
-        output_path = f"reels/reels_track_{i+1:06d}.mp4"
+        # track = cut_track(track, fps=fps)
+        #output_path = f"reels/reels_track_{i+1:06d}.mp4"
+        file_name = os.path.basename(video_file).split('.')[0]
+        output_path = f"reels/reels_{file_name}_{i+1:06d}.mp4"
+
         crop_and_save_track(video_file, track, output_path)
         print(f"Saved: {output_path}")
 
