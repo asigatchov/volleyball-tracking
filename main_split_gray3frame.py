@@ -263,6 +263,9 @@ def process_two_regions(img, model, threshold=0.6 ):
     print("Left region shape:", left_region.shape)
     print("Right region shape:", right_region.shape)
     # Обрабатываем регионы моделью
+    left_region = cv2.resize( left_region, (1024,1024), interpolation=cv2.INTER_AREA)
+    right_region = cv2.resize( right_region, (1024,1024), interpolation=cv2.INTER_AREA)
+    
     results = model([left_region, right_region], stream=True)
 
     cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
@@ -277,7 +280,12 @@ def process_two_regions(img, model, threshold=0.6 ):
         for box in boxes:
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype('int')
 
+            x1 = int(x1 * scale)
+            x2 = int(x2 * scale)
+            y1 = int(y1 * scale)
+            y2 = int(y2 * scale)
             conf = box.conf[0].cpu().numpy()
+            cls_id = int(box.cls[0].cpu().numpy().astype('int'))
             if conf > threshold:
                 # Смещение координат обратно в общий кадр
                 x1 += x_offset
@@ -286,7 +294,7 @@ def process_two_regions(img, model, threshold=0.6 ):
                 y2 += y_offset
 
                 detected_objects.append({
-                    'cls_id':0,
+                    'cls_id':cls_id,
                     "x1": int(x1),
                     "y1": int(y1),
                     "x2": int(x2),
@@ -340,7 +348,7 @@ while True:
         continue  # Пропускаем, если недостаточно кадров
 
     # Используем новый кадр для обработки
-    detected_objects = process_two_regions(detection_frame, model, 0.65)
+    detected_objects = process_two_regions(detection_frame, model, 0.30)
 
     detected = False
     print("Detected objects:", detected_objects)
@@ -400,21 +408,13 @@ while True:
                   (x,y),
                   10, color, -1)
 
-        # # Сохраняем состояние трекера в JSON-файл каждые 100 кадров
-        # if frame_num % 100 == 0:
-        #     try:
-        #         with open(f"tracker_state_{frame_num}.json", "w") as f:
-        #             f.write(tracker.to_json())
-        #         print(f"Saved tracker state to tracker_state_{frame_num}.json")
-        #     except Exception as e:
-        #         print(f"Error saving tracker state: {e}")
 
     if main_id is not None:
         writer.write(img)
     cv2.namedWindow("Image", cv2.WINDOW_NORMAL)  # Создаем окно с возможностью изменения размера
-    # cv2.resizeWindow("Image", 1280, 720)        # Устанавливаем размер окна 1280x720
+    cv2.resizeWindow("Image", 1280, 720)        # Устанавливаем размер окна 1280x720
     cv2.imshow("Image", img)
-    if cv2.waitKey(1) == ord("q"):
+    if cv2.waitKey(0) == ord("q"):
         break
 
 cap.release()

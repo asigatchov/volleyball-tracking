@@ -240,6 +240,42 @@ def merge_tracks(tracks, max_gap_seconds=1, fps=60):
     
     merged_tracks.append(current_track)
     return merged_tracks
+
+def save_full_frame_track(video_file, track, output_path):
+    """
+    Сохраняет видео по треку, используя полные кадры без crop.
+    video_file: путь к исходному видео
+    track: словарь с ключами 'positions' (список (x, y, frame)), 'start_frame', 'last_frame'
+    output_path: путь для сохранения результата
+    """
+    cap = cv2.VideoCapture(video_file)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    ret, frame = cap.read()
+    if not ret:
+        cap.release()
+        return
+    frame_height, frame_width = frame.shape[:2]
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
+
+    start_frame = track['start_frame']
+    end_frame = track['last_frame']
+
+    for frame_idx in range(start_frame, end_frame + 1):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+        ret, frame = cap.read()
+        if not ret:
+            break
+        cv2.imshow(f"Video: {video_file}", frame)
+        key = cv2.waitKey(25) & 0xFF
+        if key == ord('q'):
+            break
+        out.write(frame)
+
+    cap.release()
+    out.release()
+
 def crop_and_save_track(video_file, track, output_path):
     """
     video_file: путь к исходному видео
@@ -558,8 +594,10 @@ def main():
     ensure_reels_dir()
     for i, track in enumerate(merged_tracks):
         #track = cut_track(track, fps=fps)
-        output_path = f"reels/reels_track_{i+1:06d}.mp4"
-        crop_and_save_track(video_file, track, output_path)
+        output_path = f"rally/track_{i+1:06d}.mp4"
+
+        save_full_frame_track(video_file, track, output_path)
+        #crop_and_save_track(video_file, track, output_path)
         print(f"Saved: {output_path}")
 
 if __name__ == "__main__":
